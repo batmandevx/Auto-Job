@@ -12,6 +12,12 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 
 </div>
 
+### ▶ Watch the 60-second reel
+
+[![Auto Job in 60 seconds: one button reads the job, tailors the resume, fills every page, checks it with its own eyes, and stops for your review](docs/video/reel-preview.jpg)](https://github.com/batmandevx/Auto-Job/blob/main/docs/video/auto-job-reel.mp4)
+
+<sub>Click the preview to play it ([auto-job-reel.mp4](docs/video/auto-job-reel.mp4), 60 s, vertical). Everything in it uses a made-up demo profile.</sub>
+
 ![Auto Job filling a job application: every field outlined green or orange, the panel on the right showing Job, Resume, Fill and Review all done](docs/screenshots/hero-do-it-all.png)
 
 <sub>One press of **Do it all on this page**. Auto Job read the job, tailored a resume (95% keyword match) and a cover letter, uploaded both, filled all 14 fields and stopped for review. Green = from your profile. Orange = written by AI or a consent box, please check. (Demo profile: "Riya Sharma" is made up.)</sub>

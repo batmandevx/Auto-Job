@@ -212,9 +212,9 @@ app.get('/api/documents/:kind', (req, res) => {
 app.post('/api/vision', route(async (req, res) => {
   const images = (req.body.images || []).filter((x) => typeof x === 'string' && x.length > 1000).slice(0, 4);
   if (!images.length) return res.json({ problems: [], summary: 'no screenshot' });
-  const fields = (req.body.fields || []).slice(0, 120).map(({ label, type, required, filled }) => ({ label: String(label || '').slice(0, 140), type, required, filled }));
+  const fields = (req.body.fields || []).slice(0, 150).map(({ n, label, type, required, filled }) => ({ n, label: String(label || '').slice(0, 140), type, required, filled }));
   const out = await chatJSON(VISION_SYSTEM, JSON.stringify({ URL: req.body.url || '', FIELDS: fields }), { temperature: 0.1, images, budgetMs: 70000 });
-  const problems = (Array.isArray(out.problems) ? out.problems : []).filter((p) => p && p.problem).slice(0, 15).map((p) => ({ label: String(p.label || ''), problem: String(p.problem), fix: String(p.fix || '') }));
+  const problems = (Array.isArray(out.problems) ? out.problems : []).filter((p) => p && p.problem).slice(0, 15).map((p) => ({ field: Number(p.field) || 0, label: String(p.label || ''), problem: String(p.problem), fix: String(p.fix || '') }));
   res.json({ problems, summary: String(out.summary || '') });
 }));
 

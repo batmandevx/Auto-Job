@@ -492,3 +492,6 @@ html[data-mode="popup"] .brand-sub { display: none; }
 
 .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 .pill.warn .dot { background: var(--warn); }
+
+/* What the visual check saw (one thumbnail, newest page). */
+.item img.seen { display: block; width: 100%; margin-top: 8px; border-radius: 10px; border: 1px solid var(--line, rgba(127,127,127,.25)); }

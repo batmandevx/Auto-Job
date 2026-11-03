@@ -155,6 +155,8 @@ Report only problems a careful person would see on screen:
 - an error banner, toast, or modal / popup covering the form
 - a CAPTCHA (just report it; the candidate types it)
 Do not report fields that look correctly filled, optional empty fields, or styling. Never invent problems.
-FIELDS lists the form's fields as the extension sees them: use their exact "label" when a problem belongs to one.
-Output JSON: { "problems": [ { "label": "<field label or empty>", "problem": "<what is wrong, short>", "fix": "<what the value should look like, if visible>" } ],
+Each field on screen wears a small purple badge "#n" just above its top-left corner. FIELDS lists them as { n, label, type,
+required, filled }. When a problem belongs to a field, give its badge number in "field" (read it from the screenshot) and
+its label. Badges themselves are not part of the page: never report them.
+Output JSON: { "problems": [ { "field": <badge number or 0>, "label": "<field label or empty>", "problem": "<what is wrong, short>", "fix": "<what the value should look like, if visible>" } ],
   "summary": "<one short sentence>" }`;

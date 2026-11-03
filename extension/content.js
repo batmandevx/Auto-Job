@@ -1,7 +1,7 @@
 // Injected into every frame of the job page by the side panel.
 // Exposes window.__jobfill: scan / fill / upload / next / submit helpers. Never submits on its own.
 (() => {
-  if (window.__jobfill?.version === 5) return;
+  if (window.__jobfill?.version === 6) return;
 
   const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'password']);
   const clean = (s) => (s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim(); // zero-width padding (PyjamaHR) is not text
@@ -686,10 +686,15 @@
     return a === w || scoreOption(actual, wanted) >= 68 || a.includes(w) || (w.length > 6 && w.includes(a));
   };
 
-  function mark(el, review) {
+  // The box a person sees for a control (a radio's group, React-Select's visible box rather than its tiny search input).
+  function visualBox(el) {
     let target = ['radio', 'checkbox'].includes(el.type) || /radio|checkbox|switch/.test(el.getAttribute('role') || '') ? el.closest('fieldset, [role="radiogroup"], [role="group"], div') || el : el;
     // Search inputs inside a select (React-Select) are a few pixels wide: outline the visible box instead.
     if (target.getBoundingClientRect().width < 60) target = el.closest('[class*="control" i], [class*="container" i], [class*="select" i], [class*="input" i]') || target;
+    return target;
+  }
+  function mark(el, review) {
+    const target = visualBox(el);
     target.style.outline = `2px solid ${review ? '#f59e0b' : '#22c55e'}`;
     target.style.outlineOffset = '2px';
   }
@@ -1319,6 +1324,8 @@
     const box = findById(id);
     const part = box && dateSection(box);
     if (part) return !!datePart(value, part) && Number(actual) === Number(datePart(value, part));
+    const one = groups.get(id)?.length === 1 ? groups.get(id)[0] : !groups.get(id) && box && (box.type === 'checkbox' || /checkbox|switch/.test(box.getAttribute('role') || '')) ? box : null;
+    if (typeof value === 'boolean' && one) return isChecked(one) === value; // a single checkbox: ticked or not
     if (typeof value === 'string' && dateParts(value) && sameDate(actual, value)) return true;
     if (typeof value === 'boolean') return actual === String(value) || (value === false && !actual);
     if (Array.isArray(value)) return value.every((v) => sameValue(actual, v) || norm(actual).includes(norm(v)));
@@ -1610,6 +1617,82 @@
     else if (typeof el.select === 'function') el.select();
     return { ok: document.activeElement === el || el.contains(document.activeElement), multiline: el.tagName === 'TEXTAREA' || el.isContentEditable };
   }
+  // ---------- eyes: numbered field badges ----------
+  // A small "#7" tag beside each field while the screenshots are taken, so the visual check can say
+  // "#7 is empty" and the fix lands on exactly that field.
+  function badgeFields(ids, start = 1) {
+    clearBadges();
+    const out = [];
+    let n = start;
+    for (const id of ids) {
+      const el = findById(id) || groups.get(id)?.[0];
+      if (!el || !shown(visualBox(el))) continue;
+      const r = visualBox(el).getBoundingClientRect();
+      const b = document.createElement('div');
+      b.className = 'jf-badge';
+      b.textContent = `#${n}`;
+      Object.assign(b.style, { position: 'absolute', left: `${Math.max(0, r.left + scrollX - 6)}px`, top: `${Math.max(0, r.top + scrollY - 15)}px`, zIndex: '2147483647', background: '#7c3aed', color: '#fff', font: 'bold 11px/15px system-ui, sans-serif', padding: '0 5px', borderRadius: '5px', pointerEvents: 'none', boxShadow: '0 1px 3px rgba(0,0,0,.3)' });
+      document.body.appendChild(b);
+      out.push({ n, id });
+      n++;
+    }
+    return out;
+  }
+  function clearBadges() {
+    document.querySelectorAll('.jf-badge').forEach((b) => b.remove());
+    return true;
+  }
+
+  // ---------- real clicks: where to click ----------
+  // Points are in the top window's viewport (the debugger clicks there), so add the offsets of same-site iframes.
+  // A cross-site iframe can't be measured from inside: no point, and the panel falls back to the normal fill.
+  function topOffset() {
+    let x = 0;
+    let y = 0;
+    try {
+      for (let w = window; w !== w.top; w = w.parent) {
+        const fe = w.frameElement;
+        if (!fe) return null;
+        const r = fe.getBoundingClientRect();
+        x += r.left + fe.clientLeft;
+        y += r.top + fe.clientTop;
+      }
+    } catch {
+      return null;
+    }
+    return { x, y };
+  }
+  function centerOf(node) {
+    const off = topOffset();
+    if (!node || !off) return null;
+    node.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const r = node.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return { x: Math.round(off.x + r.left + Math.min(r.width / 2, 40)), y: Math.round(off.y + r.top + r.height / 2) };
+  }
+  // Where to click for a field: the matching radio / checkbox option, or the visible box of a dropdown.
+  function clickPoint(id, value) {
+    const members = groups.get(id);
+    if (members) {
+      const i = members.length === 1 ? 0 : bestMatch(members.map(optionLabel), String(Array.isArray(value) ? value[0] : value));
+      if (i < 0) return null;
+      const m = members[i];
+      return centerOf(shown(m) ? m : m.labels?.[0] || m.closest('label') || m.parentElement);
+    }
+    const el = findById(id);
+    if (!el) return null;
+    // A single checkbox / radio / switch: click the control itself (its row may be a label the page ignores).
+    if (['checkbox', 'radio'].includes(el.type) || /checkbox|radio|switch/.test(el.getAttribute('role') || '')) return centerOf(shown(el) ? el : el.labels?.[0] || el.parentElement);
+    return centerOf(visualBox(el));
+  }
+  // The option to click in whatever list is open now.
+  function optionPoint(value) {
+    const opts = deepAll(OPTION_SEL).filter((o) => shown(o) && o.getAttribute('aria-disabled') !== 'true');
+    const i = bestMatch(optionTexts(opts), String(value));
+    return i < 0 ? null : centerOf(opts[i]);
+  }
+  const checkValue = (id, value) => holds(id, value);
+
   // For page screenshots: page height, viewport height, and scrolling to a slice.
   const pageMetrics = () => ({ height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0), view: innerHeight, y: scrollY });
   function scrollToY(y) {
@@ -1621,7 +1704,7 @@
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
   window.__jobfill = {
-    version: 5,
+    version: 6,
     scan,
     fill,
     uploadFile,
@@ -1646,6 +1729,11 @@
     openFixCard,
     focusCaptcha,
     prepareType,
+    badgeFields,
+    clearBadges,
+    clickPoint,
+    optionPoint,
+    checkValue,
     pageMetrics,
     scrollToY,
     saveOpenCard,

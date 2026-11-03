@@ -439,8 +439,13 @@ flowchart TD
     H --> I
 ```
 
-- **Eyes.** Chrome captures the visible tab, scrolled through the page, and sends it to Gemini with the list of fields. Gemini names each problem by its field label, and Auto Job runs it through the same fix-up as a site error. Problems it can't tie to a field (a popup, a banner) are listed for you.
-- **Real typing.** Chrome's debugger interface sends real keystrokes: Backspace to clear, the text itself, then Tab so the site validates. To the page this is identical to your keyboard. The debugger is attached only while a box is being retyped and detached right after. While it's attached, Chrome shows its standard "started debugging this browser" bar.
+![What the visual check sees: every field wears a numbered badge](docs/screenshots/visual-check-badges.jpg)
+
+<sub>What Gemini sees: each field wears a numbered badge only while the screenshot is taken. On this page with deliberate mistakes it reported, by number, the email and phone typed into each other's boxes (#3, #4), the empty required boxes (#7, #12), the dropdowns still on "Select…" (#8, #10, #11) and the unticked consent box (#13).</sub>
+
+- **Eyes.** Chrome captures the page top to bottom (up to 3 screens, scaled down to 1400 px so it's fast and cheap). While it does, every field wears a small numbered badge, so Gemini answers "#7 is empty" instead of guessing from wording, and each fix lands on exactly that field. After fixing, it looks once more to confirm the fixes held. If a site refuses to move on without showing an error in its code, the eyes look for the reason. The panel shows a thumbnail of what it saw. Problems it can't tie to a field (a popup, a banner) are listed for you.
+- **Real clicks.** Dropdowns, type-to-search boxes, radios and checkboxes that ignore scripted clicks get real mouse clicks through the debugger. It opens the list, types into its search, presses Enter if needed, and clicks the option.
+- **Real typing.** Chrome's debugger interface sends real keystrokes: Backspace to clear, the text itself, then Tab so the site validates. Boxes that only accept individual key presses (digit masks, PIN boxes) get typed one key at a time. To the page this is identical to your keyboard. The debugger is attached only while a box is being retyped and detached right after. While it's attached, Chrome shows its standard "started debugging this browser" bar.
 - **Why not Playwright, Selenium or Electron?** They drive a separate, automated browser. That means no logins (your Workday and Gmail sessions), and many portals detect automated browsers and block them. Auto Job stays in your own browser, so the site sees you.
 
 ## The form-filling engine
@@ -620,6 +625,7 @@ With the server running, open any of these and use the panel on it:
 | `/test/langs.html` | Add Language editors and Link 1 / 2 / 3 boxes |
 | `/test/workday.html` · `/test/wdexp.html` · `/test/wdstate.html` | Workday prompts, split dates, values Workday ignores unless typed |
 | `/test/juspay.html` | Phone with a separate +91 box, CAPTCHA hand-off |
+| `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |
 | `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
 | `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |
 

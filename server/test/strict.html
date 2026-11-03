@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Strict widgets – real clicks and keys test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    .q { margin: 18px 0; } .lbl { font-weight: 600; margin-bottom: 6px; }
+    .sel { border: 1px solid #aaa; border-radius: 6px; padding: 9px 12px; cursor: pointer; background: #fff; position: relative; }
+    .menu { position: absolute; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #aaa; z-index: 5; }
+    .menu input { width: 100%; box-sizing: border-box; padding: 8px; border: 0; border-bottom: 1px solid #ddd; }
+    [role="option"] { padding: 8px 12px; } [role="option"]:hover { background: #eef; }
+    .radios span { display: inline-block; padding: 6px 14px; border: 1px solid #aaa; border-radius: 16px; margin-right: 6px; cursor: pointer; }
+    .radios span[aria-checked="true"] { background: #4f46e5; color: #fff; }
+    .box { display: inline-block; width: 18px; height: 18px; border: 2px solid #555; border-radius: 4px; vertical-align: middle; cursor: pointer; }
+    .box[aria-checked="true"] { background: #4f46e5; }
+    input.t { padding: 8px; width: 220px; }
+  </style>
+</head>
+<body>
+  <h2>Strict widgets</h2>
+  <p>Everything here ignores scripted clicks and keys: only events the browser marks as trusted count.</p>
+  <div class="q"><div class="lbl" id="ctry-l">Country *</div>
+    <div class="sel" id="ctry" role="combobox" aria-haspopup="listbox" aria-labelledby="ctry-l" tabindex="0"><span>Select…</span></div></div>
+  <div class="q"><div class="lbl" id="rel-l">Willing to relocate? *</div>
+    <div class="radios" role="radiogroup" aria-labelledby="rel-l"><span role="radio" aria-checked="false">Yes</span><span role="radio" aria-checked="false">No</span></div></div>
+  <div class="q"><span class="box" role="checkbox" aria-checked="false" aria-labelledby="pp-l" tabindex="0"></span> <span id="pp-l">I agree to the privacy policy *</span></div>
+  <div class="q"><label class="lbl" for="pin">PIN code (digits only) *</label><br /><input class="t" id="pin" inputmode="numeric" /></div>
+  <script>
+    const COUNTRIES = ['Australia', 'Canada', 'Germany', 'India', 'Indonesia', 'Singapore', 'United Kingdom', 'United States'];
+    const state = { country: '', relocate: '', privacy: false, pin: '' };
+    const ctry = document.getElementById('ctry');
+    let menu = null;
+    ctry.addEventListener('click', (e) => {
+      if (!e.isTrusted || e.target.closest('.menu')) return;
+      if (menu) { menu.remove(); menu = null; return; }
+      menu = document.createElement('div'); menu.className = 'menu'; menu.setAttribute('role', 'listbox');
+      menu.innerHTML = `<input placeholder="Search" />${COUNTRIES.map((c) => `<div role="option">${c}</div>`).join('')}`;
+      ctry.appendChild(menu);
+      const q = menu.querySelector('input'); q.focus();
+      q.addEventListener('input', (ev) => { if (!ev.isTrusted) return; menu.querySelectorAll('[role=option]').forEach((o) => (o.style.display = o.textContent.toLowerCase().includes(q.value.toLowerCase()) ? '' : 'none')); });
+      menu.addEventListener('click', (ev) => {
+        if (!ev.isTrusted || ev.target.getAttribute('role') !== 'option') return;
+        state.country = ev.target.textContent; ctry.firstElementChild.textContent = state.country; menu.remove(); menu = null;
+      });
+    });
+    document.querySelectorAll('[role=radio]').forEach((r) => r.addEventListener('click', (e) => {
+      if (!e.isTrusted) return;
+      document.querySelectorAll('[role=radio]').forEach((x) => x.setAttribute('aria-checked', String(x === r))); state.relocate = r.textContent;
+    }));
+    const box = document.querySelector('.box');
+    box.addEventListener('click', (e) => { if (!e.isTrusted) return; state.privacy = !state.privacy; box.setAttribute('aria-checked', String(state.privacy)); });
+    // Digits only, one real key press at a time (pasted or script-set text is thrown away).
+    const pin = document.getElementById('pin');
+    pin.addEventListener('keydown', (e) => {
+      if (!e.isTrusted) return;
+      if (/^\d$/.test(e.key) && state.pin.length < 6) state.pin += e.key;
+      if (e.key === 'Backspace') state.pin = state.pin.slice(0, -1);
+      if (e.key.length === 1 || e.key === 'Backspace') e.preventDefault();
+      pin.value = state.pin;
+    });
+    pin.addEventListener('input', () => (pin.value = state.pin));
+    window.report = () => ({ ...state, shown: { country: ctry.firstElementChild.textContent, pin: pin.value } });
+  </script>
+</body>
+</html>

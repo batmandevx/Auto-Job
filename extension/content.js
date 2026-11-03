@@ -1,7 +1,7 @@
 // Injected into every frame of the job page by the side panel.
 // Exposes window.__jobfill: scan / fill / upload / next / submit helpers. Never submits on its own.
 (() => {
-  if (window.__jobfill?.version === 4) return;
+  if (window.__jobfill?.version === 5) return;
 
   const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'password']);
   const clean = (s) => (s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim(); // zero-width padding (PyjamaHR) is not text
@@ -1600,11 +1600,28 @@
     return { ok: true };
   }
 
+  // Real typing (Chrome debugger): put the cursor in the field with its text selected, so the typed text replaces it.
+  function prepareType(id) {
+    const el = findById(id);
+    if (!el) return { ok: false };
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    el.focus();
+    if (el.isContentEditable) document.execCommand('selectAll');
+    else if (typeof el.select === 'function') el.select();
+    return { ok: document.activeElement === el || el.contains(document.activeElement), multiline: el.tagName === 'TEXTAREA' || el.isContentEditable };
+  }
+  // For page screenshots: page height, viewport height, and scrolling to a slice.
+  const pageMetrics = () => ({ height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0), view: innerHeight, y: scrollY });
+  function scrollToY(y) {
+    scrollTo({ top: y, behavior: 'instant' });
+    return scrollY;
+  }
+
   // Signature of the current form step, to tell whether Next actually moved on.
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
   window.__jobfill = {
-    version: 4,
+    version: 5,
     scan,
     fill,
     uploadFile,
@@ -1628,6 +1645,9 @@
     lostValues,
     openFixCard,
     focusCaptcha,
+    prepareType,
+    pageMetrics,
+    scrollToY,
     saveOpenCard,
   };
 })();

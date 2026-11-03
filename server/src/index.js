@@ -7,7 +7,7 @@ import multer from 'multer';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { chatJSON, describeProvider, geminiStatus, usedFallbackRecently } from './llm.js';
-import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM } from './prompts.js';
+import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM, VISION_SYSTEM } from './prompts.js';
 import { tailorResume, withoutGradSentences, crisp, cleanRole } from './tailor.js';
 import { profileSkillsInJD } from './keywords.js';
 import { listHackathons } from './hackathons.js';
@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'OPTIONS' && !allowedOrigin(req.headers.origin)) return res.status(403).json({ error: 'Forbidden origin' });
   next();
 });
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '15mb' })); // page screenshots for the visual check
 // Dev aid: a sample application form, plus the content script so it can be tried without loading the extension.
 app.use('/test', express.static(path.resolve(import.meta.dirname, '../test')));
 app.use('/test/ext', express.static(path.resolve(import.meta.dirname, '../../extension')));
@@ -208,6 +208,16 @@ app.get('/api/documents/:kind', (req, res) => {
 });
 
 // Remember the answers on a page (including your corrections) for the next application.
+// Visual check: the panel sends screenshots of the filled page; Gemini says what looks wrong on screen.
+app.post('/api/vision', route(async (req, res) => {
+  const images = (req.body.images || []).filter((x) => typeof x === 'string' && x.length > 1000).slice(0, 4);
+  if (!images.length) return res.json({ problems: [], summary: 'no screenshot' });
+  const fields = (req.body.fields || []).slice(0, 120).map(({ label, type, required, filled }) => ({ label: String(label || '').slice(0, 140), type, required, filled }));
+  const out = await chatJSON(VISION_SYSTEM, JSON.stringify({ URL: req.body.url || '', FIELDS: fields }), { temperature: 0.1, images, budgetMs: 70000 });
+  const problems = (Array.isArray(out.problems) ? out.problems : []).filter((p) => p && p.problem).slice(0, 15).map((p) => ({ label: String(p.label || ''), problem: String(p.problem), fix: String(p.fix || '') }));
+  res.json({ problems, summary: String(out.summary || '') });
+}));
+
 app.post('/api/answer-bank', (req, res) => res.json({ saved: rememberAnswers(req.body.entries) }));
 
 // Apply by email: draft (AI) → you review/edit in the panel → send (only on your confirm).

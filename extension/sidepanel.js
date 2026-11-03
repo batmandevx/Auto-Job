@@ -556,7 +556,7 @@ async function collectFieldErrors(tab) {
 }
 
 // Ask for corrected values for the flagged fields (with the site's message and the rejected value) and re-fill them.
-async function repairPage(tab, errs, pageErrors, pageNo) {
+async function repairPage(tab, errs, pageErrors, pageNo, { trusted = false, title = 'fixes' } = {}) {
   const scans = await callAll(tab.id, 'scan');
   const meta = new Map();
   for (const { frameId, result } of scans) for (const f of result.fields) meta.set(`${frameId}:${f.id}`, { ...f, id: `${frameId}:${f.id}`, label: f.label.slice(0, 300) });
@@ -575,21 +575,142 @@ async function repairPage(tab, errs, pageErrors, pageNo) {
   const rows = [];
   for (const [frameId, vals] of Object.entries(byFrame)) {
     const review = needsReview.filter((k) => k.startsWith(`${frameId}:`)).map((k) => k.split(/:(.*)/)[1]);
-    const r = (await callFrame(tab.id, Number(frameId), 'fill', vals, review)) || {};
+    // Real typing: text boxes get genuine keystrokes through the debugger; everything else is filled as usual.
+    const typed = {};
+    if (trusted) {
+      for (const [id, v] of Object.entries(vals)) {
+        if (!TYPABLE.includes(meta.get(`${frameId}:${id}`)?.type) || typeof v !== 'string') continue;
+        typed[id] = await realType(tab.id, Number(frameId), id, v);
+        delete vals[id];
+      }
+    }
+    const r = { ...((Object.keys(vals).length && (await callFrame(tab.id, Number(frameId), 'fill', vals, review))) || {}), ...typed };
     for (const [id, status] of Object.entries(r)) {
       const key = `${frameId}:${id}`;
       const f = meta.get(key);
       if (status === 'filled') fixed++;
-      rows.push(`<div class="item ${status === 'filled' ? 'warn' : 'bad'}"><div class="q">🔧 ${esc((f?.label || id).slice(0, 90))} <span class="tag ${status === 'filled' ? 'review' : 'err'}">${status === 'filled' ? 'corrected' : esc(status)}</span></div>
+      rows.push(`<div class="item ${status === 'filled' ? 'warn' : 'bad'}"><div class="q">${id in typed ? '⌨️' : '🔧'} ${esc((f?.label || id).slice(0, 90))} <span class="tag ${status === 'filled' ? 'review' : 'err'}">${status === 'filled' ? (id in typed ? 'retyped' : 'corrected') : esc(status)}</span></div>
         <div class="v">${esc(String(values[key]).slice(0, 120))}${errors[key]?.message ? `<span class="src">site said: ${esc(errors[key].message.slice(0, 80))}</span>` : ''}</div></div>`);
     }
   }
   if (rows.length) {
-    state.log.push(`<div class="page">Page ${pageNo} · fixes</div>${rows.join('')}`);
+    state.log.push(`<div class="page">Page ${pageNo} · ${esc(title)}</div>${rows.join('')}`);
     $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
   }
   const unresolved = targets.filter((f) => !values[f.id]).map((f) => f.label);
+  if (trusted) await debuggerOff(tab.id);
   return { fixed, unresolved };
+}
+
+// ---------- real typing (Chrome debugger) ----------
+// Some sites only accept what a real keyboard types. The debugger sends genuine keystrokes to the focused field.
+// Chrome shows a "started debugging this browser" bar while attached, so we attach only while retyping.
+const TYPABLE = ['text', 'email', 'tel', 'url', 'number', 'search', 'textarea', ''];
+const attached = new Set();
+async function debuggerOn(tabId) {
+  if (attached.has(tabId)) return true;
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3');
+  } catch (e) {
+    if (!/already attached/i.test(e.message)) return false;
+  }
+  attached.add(tabId);
+  return true;
+}
+async function debuggerOff(tabId) {
+  if (!attached.delete(tabId)) return;
+  await chrome.debugger.detach({ tabId }).catch(() => {});
+}
+const key = (tabId, type, k, code, vk) => chrome.debugger.sendCommand({ tabId }, 'Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
+async function realType(tabId, frameId, id, value) {
+  if (!(await debuggerOn(tabId))) return 'real typing unavailable (another debugger is attached?)';
+  const ready = await callFrame(tabId, frameId, 'prepareType', id);
+  if (!ready?.ok) return "couldn't focus the field";
+  try {
+    // Clear what's there, then type the value as real text input, then Tab out so the site validates it.
+    await key(tabId, 'keyDown', 'Backspace', 'Backspace', 8);
+    await key(tabId, 'keyUp', 'Backspace', 'Backspace', 8);
+    await chrome.debugger.sendCommand({ tabId }, 'Input.insertText', { text: String(value) });
+    await sleep(120);
+    await key(tabId, 'keyDown', 'Tab', 'Tab', 9);
+    await key(tabId, 'keyUp', 'Tab', 'Tab', 9);
+    await sleep(250);
+  } catch (e) {
+    return `real typing failed: ${e.message}`;
+  }
+  const shows = await callFrame(tabId, frameId, 'readFieldValue', id);
+  return String(shows ?? '').replace(/\s+/g, ' ').trim() === String(value).replace(/\s+/g, ' ').trim() ? 'filled' : `didn't stick (shows "${String(shows ?? '').slice(0, 40)}")`;
+}
+
+// ---------- eyes: visual check ----------
+// Screenshots of the page (top to bottom, up to 3 screens) for Gemini to look at like a person would.
+async function capturePage(tab) {
+  const m = await callFrame(tab.id, 0, 'pageMetrics');
+  if (!m) return [];
+  const step = Math.max(300, Math.floor(m.view * 0.85));
+  const shots = [];
+  for (let y = 0; shots.length < 3 && y < m.height; y += step) {
+    await callFrame(tab.id, 0, 'scrollToY', y);
+    await sleep(500); // also stays under Chrome's 2-screenshots-per-second limit
+    const url = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 55 }).catch(() => null);
+    if (url) shots.push(url.split(',')[1]);
+  }
+  await callFrame(tab.id, 0, 'scrollToY', m.y);
+  return shots;
+}
+const words = (x) => String(x).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2);
+function matchField(label, fields) {
+  const want = words(label);
+  if (!want.length) return null;
+  let best = null;
+  let score = 0;
+  for (const f of fields) {
+    const have = new Set(words(String(f.label).split('›').pop()));
+    const s = want.filter((w) => have.has(w)).length / want.length;
+    if (s > score) [best, score] = [f, s];
+  }
+  return score >= 0.6 ? best : null;
+}
+// Look at the page; anything visibly wrong on a field is fixed like a site error (with real typing if it's on).
+async function visualCheck(tab, pageNo) {
+  if (!$('#visualCheck').checked) return { problems: 0 };
+  progress(`Page ${pageNo}: 👁 looking at the page…`);
+  const images = await capturePage(tab);
+  if (!images.length) return { problems: 0 };
+  const scans = await callAll(tab.id, 'scan');
+  const fields = scans.flatMap(({ frameId, result }) => result.fields.map((f) => ({ ...f, key: `${frameId}:${f.id}` })));
+  const seen = await api('/api/vision', { method: 'POST', body: { images, url: tab.url, fields: fields.map(({ label, type, required, filled }) => ({ label, type, required, filled })) } }).catch((e) => ({ error: e.message }));
+  if (seen.error) {
+    progress(`Visual check skipped: ${seen.error.slice(0, 80)}`);
+    return { problems: 0 };
+  }
+  const errs = [];
+  const loose = [];
+  for (const p of seen.problems || []) {
+    const f = p.label && matchField(p.label, fields);
+    if (f && f.type !== 'file' && f.type !== 'captcha') errs.push({ key: f.key, label: f.label, error: `${p.problem}${p.fix ? ` (should be: ${p.fix})` : ''}`, value: '' });
+    else loose.push(p);
+  }
+  const rows = [`<div class="item ${seen.problems?.length ? 'warn' : ''}"><div class="q">👁 Visual check <span class="tag ${seen.problems?.length ? 'review' : 'done'}">${seen.problems?.length ? `${seen.problems.length} seen` : 'looks right'}</span></div><div class="v">${esc(seen.summary || '')}</div></div>`,
+    ...loose.map((p) => `<div class="item bad"><div class="q">👁 ${esc(p.label || 'On the page')} <span class="tag err">check it</span></div><div class="v">${esc(p.problem)}</div></div>`)];
+  state.log.push(`<div class="page">Page ${pageNo} · visual check</div>${rows.join('')}`);
+  $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+  if (errs.length) {
+    progress(`Page ${pageNo}: 👁 fixing ${errs.length} field${errs.length > 1 ? 's' : ''} that look wrong`);
+    await repairPage(tab, errs, [], pageNo, { trusted: $('#realTyping').checked, title: 'fixed after the visual check' });
+  }
+  return { problems: seen.problems?.length || 0, fixed: errs.length, loose: loose.length };
+}
+// Last pass on a page: retype anything the site still flags with real keystrokes, then look at it.
+async function checkPage(tab, pageNo) {
+  if ($('#realTyping').checked) {
+    const stuck = (await collectFieldErrors(tab)).filter((e) => e.value);
+    if (stuck.length) {
+      progress(`Page ${pageNo}: ⌨️ retyping ${stuck.length} field${stuck.length > 1 ? 's' : ''} the site still rejects`);
+      await repairPage(tab, stuck, [], pageNo, { trusted: true, title: 'retyped' }).catch(() => {});
+    }
+  }
+  return visualCheck(tab, pageNo).catch(() => ({ problems: 0 }));
 }
 
 // Fill → Next → fill … until the final page (Submit visible), a page needs you, or Next fails.
@@ -617,6 +738,7 @@ async function runPages() {
     if (!r.next || !$('#autoNext').checked) {
       const errs = (await collectFieldErrors(tab)).filter((e) => e.value);
       if (errs.length) await repairPage(tab, errs, [], page).catch(() => {});
+      await checkPage(tab, page);
       progress(r.submit ? `Final page: review everything, then press Submit` : `Done filling. Review the page.`);
       setStep('review');
       if (r.submit) $('#submit').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -632,6 +754,7 @@ async function runPages() {
       progress(`Page ${page}: fixing ${errs.length} flagged field${errs.length > 1 ? 's' : ''}`);
       if (!(await repairPage(tab, errs, [], page)).fixed) break;
     }
+    await checkPage(tab, page);
     await remember(tab.id);
     const clickNextAndWait = async () => {
       const before = await pageKeys(tab.id);
@@ -652,7 +775,7 @@ async function runPages() {
       const pageErrs = (await callAll(tab.id, 'errorTexts')).flatMap((f) => f.result);
       if (!errs.length && !pageErrs.length) break;
       progress(`Page ${page}: the site found ${errs.length || pageErrs.length} problem${(errs.length || pageErrs.length) > 1 ? 's' : ''}, fixing (attempt ${attempt}/3)`);
-      const fx = await repairPage(tab, errs, pageErrs, page);
+      const fx = await repairPage(tab, errs, pageErrs, page, { trusted: attempt > 1 && $('#realTyping').checked });
       if (!fx.fixed) break;
       moved = await clickNextAndWait();
     }
@@ -1465,7 +1588,7 @@ $('#serverUrl').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ server: SERVER });
   checkServer();
 });
-for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']) {
+for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']) {
   $(`#${id}`).addEventListener('change', (e) => chrome.storage.local.set({ [id]: e.target.checked }));
 }
 
@@ -1529,9 +1652,9 @@ chrome.storage.local.get(['boards', 'boardJobs', 'savedHacks']).then(({ boards, 
     renderJobs();
   }
 });
-chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']).then((s) => {
+chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']).then((s) => {
   if (s.server) SERVER = s.server;
   $('#serverUrl').value = SERVER;
-  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
+  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
   checkServer();
 });

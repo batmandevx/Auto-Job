@@ -13,15 +13,17 @@ export function describeProvider() {
 }
 
 // heavy: true marks quality-critical calls (resume parsing / tailoring) that may use a stronger model.
-export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs } = {}) {
+// images: base64 JPEG screenshots, for the visual page check (Gemini only).
+export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs, images = [] } = {}) {
   const p = provider();
   let text;
+  if (images.length && p !== 'gemini') throw new Error('The visual check needs Gemini (LLM_PROVIDER=gemini)');
   if (p === 'gemini') {
     try {
-      text = await gemini(system, user, temperature, heavy, budgetMs ?? (heavy ? 150000 : 60000));
+      text = await gemini(system, user, temperature, heavy, budgetMs ?? (heavy ? 150000 : 60000), images);
     } catch (e) {
       // Free Gemini quota gone or every model overloaded: use the local Ollama model if it's running.
-      if (process.env.OLLAMA_FALLBACK === 'off' || !(await ollamaUp())) throw e;
+      if (images.length || process.env.OLLAMA_FALLBACK === 'off' || !(await ollamaUp())) throw e;
       console.warn(`Gemini unavailable (${String(e.message).slice(0, 80)}); using local Ollama instead`);
       lastFallbackAt = Date.now();
       text = await ollama(system, user, temperature);
@@ -43,7 +45,7 @@ export function geminiStatus() {
   return [...resting].filter(([, t]) => t > now).map(([m, t]) => ({ model: m, minutes: Math.round((t - now) / 60000) }));
 }
 
-async function gemini(system, user, temperature, heavy, budgetMs) {
+async function gemini(system, user, temperature, heavy, budgetMs, images = []) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set in server/.env');
   const main = (heavy && process.env.GEMINI_HEAVY_MODEL) || describeProvider().model;
@@ -71,7 +73,7 @@ async function gemini(system, user, temperature, heavy, budgetMs) {
         signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
+          contents: [{ role: 'user', parts: [{ text: user }, ...images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))] }],
           generationConfig: { temperature, responseMimeType: 'application/json', maxOutputTokens: 32768, thinkingConfig },
         }),
       });

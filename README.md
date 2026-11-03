@@ -29,6 +29,7 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
 - [Using every feature](#using-every-feature)
+- [Eyes and real typing](#eyes-and-real-typing)
 - [The form-filling engine](#the-form-filling-engine)
 - [Answers that never depend on the AI](#answers-that-never-depend-on-the-ai)
 - [The resume and cover letter](#the-resume-and-cover-letter)
@@ -82,6 +83,8 @@ Auto Job does the repetitive part and leaves the decisions to you:
   - fields inside iframes and shadow DOM
 - **📎 Uploads documents.** Resume, cover letter, and also photo, signature, marksheets, ID / address proof and PAN when a form asks for them.
 - **🔁 Works through every page.** It clicks *Next*, waits for questions that only appear after an answer, fixes validation errors and retries.
+- **👁 Has eyes.** After filling a page it takes screenshots and has Gemini look at them like a person would: red errors, empty required boxes, a value in the wrong field. Then it goes to that field and fixes it.
+- **⌨️ Types for real.** Boxes a site still rejects are retyped with genuine keystrokes through Chrome's own debugger, which sites can't tell apart from your keyboard.
 - **🔐 Reads OTPs from your Gmail and clicks verify links, automatically.** When a portal says "enter the code we emailed you", Auto Job finds that email, types the code (including 6 separate boxes) and carries on. When it says "check your inbox", it opens the verification link and fills the next page. Inbox access is read-only.
 - **📨 Applies by email.** When a post just says "send your CV to hr@…", it drafts the email with the files attached and sends it from your Gmail after you confirm.
 - **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list, and applies to the ones you tick, one after another.
@@ -362,6 +365,8 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 | **Cover letter** | Writes and attaches a cover letter whenever the form asks for one (file or text box). |
 | **Only empty** | Leaves alone what the site already filled, for example after "Autofill with resume". Boxes the site still flags as empty, and link boxes, are always fixed. |
 | **100% keywords** | Puts job keywords you don't have yet on a visible "Familiar with / learning" line. Off by default. |
+| **👁 Visual check** | After each page, screenshots it and asks Gemini what looks wrong, then fixes those fields. On by default; uses one AI request per page. Needs `LLM_PROVIDER=gemini`. |
+| **⌨️ Real typing** | Retypes boxes the site still rejects with real keystrokes through Chrome's debugger. On by default. Chrome shows a "started debugging this browser" bar while it types. |
 | **I've checked everything: Submit** | Press twice within 10 seconds. Only then does Auto Job click the site's Submit, add the job to your Tracker and remember your reviewed answers. |
 
 **Colours on the page:** green = filled from your profile or memory · orange = AI-written, consent box or "please check" · red = needs you.
@@ -415,6 +420,29 @@ When a post only gives an email address:
 - **"Check your email" pages:** it finds the verification link and opens it, but only on the job site's domain, the company's domain or a known ATS. Anything else is shown to you as a link.
 - **Read-only inbox access.** It never moves or deletes email. Sending only happens for **Apply by email**, after your two clicks.
 
+## Eyes and real typing
+
+Some mistakes only show on screen: a red message under a box, a dropdown still saying "Select One", a date that looks wrong. And some sites, Workday above all, ignore any value that isn't typed by a real keyboard. Auto Job handles both from inside your own browser, with your own logins, and without a separate automated browser:
+
+```mermaid
+flowchart TD
+    A[Page filled and checked field by field] --> B{Does the site still flag any box?}
+    B -- Yes --> C["⌨️ Real typing: focus the box, select its text,<br/>type the value with genuine keystrokes, press Tab"]
+    C --> D
+    B -- No --> D["👁 Visual check: screenshot the page,<br/>top to bottom, up to 3 screens"]
+    D --> E[Gemini looks at it like a person:<br/>errors, empty required boxes, wrong values, popups]
+    E --> F{Anything wrong?}
+    F -- "Yes, on a field" --> G[Go to that field and correct it,<br/>with real typing if needed]
+    F -- "Yes, elsewhere" --> H[Shown to you in the panel: check it]
+    F -- No --> I["Next page, or stop for your review"]
+    G --> I
+    H --> I
+```
+
+- **Eyes.** Chrome captures the visible tab, scrolled through the page, and sends it to Gemini with the list of fields. Gemini names each problem by its field label, and Auto Job runs it through the same fix-up as a site error. Problems it can't tie to a field (a popup, a banner) are listed for you.
+- **Real typing.** Chrome's debugger interface sends real keystrokes: Backspace to clear, the text itself, then Tab so the site validates. To the page this is identical to your keyboard. The debugger is attached only while a box is being retyped and detached right after. While it's attached, Chrome shows its standard "started debugging this browser" bar.
+- **Why not Playwright, Selenium or Electron?** They drive a separate, automated browser. That means no logins (your Workday and Gmail sessions), and many portals detect automated browsers and block them. Auto Job stays in your own browser, so the site sees you.
+
 ## The form-filling engine
 
 What makes it work on real portals and not only on simple forms:
@@ -434,6 +462,8 @@ What makes it work on real portals and not only on simple forms:
 | **Hidden padding** (zero-width spaces in labels) | Strips it so the question is read correctly. |
 | **Job page vs form** | Ignores the site's search box, menus and "Save job" toggles, presses *Apply now*, and never presses a form's own "Apply" submit button. |
 | **CAPTCHAs** | Never guessed or solved. The box is highlighted, your cursor is put in it, and the run waits for you. |
+| **Errors that only show visually** | The visual check screenshots the page and Gemini points at the field. |
+| **Boxes that ignore every scripted value** | Retyped with real keystrokes through Chrome's debugger. |
 
 **Built against real portals:** fixes came from live applications on Workday (U.S. Bank), Lever (Acron Aviation), Phenom (GE HealthCare), PyjamaHR, Recruit CRM and Indian job boards. Each has a matching test page in `server/test/`. Greenhouse, Ashby, SmartRecruiters, iCIMS and other ATS links are recognised, and every other site gets the same generic engine.
 
@@ -537,6 +567,7 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | POST | `/api/cover-letter` | Cover letter text + PDF for a job |
 | POST | `/api/answer` | Values for a list of form fields (with optional site errors) |
 | POST | `/api/answer-bank` | Remember answers from a submitted form |
+| POST | `/api/vision` | Screenshots of a filled page → the problems Gemini sees on it |
 | GET / POST / DELETE | `/api/documents[/:kind]` | List, upload, fetch or remove documents |
 | POST | `/api/email/draft` · `/api/email/send` | Draft and send an application email |
 | GET | `/api/email/check` · `/api/mail/status` | Gmail connection status |
@@ -604,6 +635,8 @@ All paths are on `http://localhost:8787`.
 | A site shows "required" next to filled boxes | Reload the extension (0.8.8+) and press Fill again. Auto Job retypes boxes the site still calls empty. |
 | A dropdown says "no option matches" | Pick it yourself. The panel lists the field and the value it tried. |
 | Old values stay after a fix | Turn off **Only empty**, or clear the field, then press Fill again. |
+| A "started debugging this browser" bar appears | That's **⌨️ Real typing** retyping a box the site rejected. It goes away by itself; turn the switch off if you'd rather not see it. |
+| "Visual check skipped" in the panel | The visual check needs Gemini (`LLM_PROVIDER=gemini`) and some quota left. Everything else keeps working. |
 | Changes to the code don't show | Reload the extension at `chrome://extensions` (or `arc://extensions`) and restart the server. |
 
 ## Limits

@@ -143,3 +143,18 @@ Rules:
   "from day one". Start with something concrete about the candidate and the role.
 - Close with "Best regards," then the name, phone, email and the links (Portfolio, LinkedIn, GitHub), one per line.
 Output JSON: { "subject": "", "body": "" }`;
+
+// The visual check: screenshots of a page that was just filled, looked at the way a person would before pressing Next.
+export const VISION_SYSTEM = `You check screenshots of a job application page that was just filled in automatically, before the
+candidate moves on. The screenshots are consecutive slices of the same page, top to bottom.
+Report only problems a careful person would see on screen:
+- red / highlighted error messages, fields outlined as invalid, "required" or "must have a value" warnings
+- required fields (marked * or "required") that look empty, or dropdowns still showing a placeholder ("Select…", "Select One")
+- a value that is obviously in the wrong field (an email in a phone box, a name in a date box), cut-off or garbled text,
+  a date shown in an impossible format
+- an error banner, toast, or modal / popup covering the form
+- a CAPTCHA (just report it; the candidate types it)
+Do not report fields that look correctly filled, optional empty fields, or styling. Never invent problems.
+FIELDS lists the form's fields as the extension sees them: use their exact "label" when a problem belongs to one.
+Output JSON: { "problems": [ { "label": "<field label or empty>", "problem": "<what is wrong, short>", "fix": "<what the value should look like, if visible>" } ],
+  "summary": "<one short sentence>" }`;

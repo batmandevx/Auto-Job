@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Tricky widgets – test form</title>
+  <style>
+    body { font: 14px system-ui; max-width: 680px; margin: 24px auto; padding: 0 16px; }
+    .q { margin: 16px 0; position: relative; } .lbl { display: block; font-weight: 600; margin-bottom: 4px; }
+    input[type=text], input[type=tel], select { width: 100%; padding: 7px; box-sizing: border-box; }
+    .err { color: #c00; font-size: 12px; min-height: 14px; } .banner { background: #fee; color: #900; padding: 8px; display: none; }
+    .pop { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #888; z-index: 9; }
+    .pop [role=listbox] { max-height: 180px; overflow: auto; } .pop [role=option] { padding: 5px 8px; height: 22px; cursor: pointer; }
+    .trigger { width: 100%; text-align: left; padding: 7px; background: #fff; border: 1px solid #888; }
+  </style>
+</head>
+<body>
+  <h1>Application details</h1>
+  <div class="banner" role="alert" id="banner">Please fix the errors below before continuing.</div>
+  <form id="f" novalidate onsubmit="return false">
+    <!-- 1. Workday-style country dropdown: virtualised list (8 rows rendered) + search box inside the popup -->
+    <div class="q" data-automation-id="formField-country"><span class="lbl" id="c-l">Country *</span>
+      <button type="button" class="trigger" id="country" aria-haspopup="listbox" aria-labelledby="c-l" aria-expanded="false">Select One</button>
+      <div class="pop" id="c-pop" hidden><input type="search" placeholder="Search" id="c-search" /><div role="listbox" id="c-list"></div></div>
+      <div class="err" id="c-err"></div></div>
+
+    <!-- 2. Native select where "Indiana" comes before "India (+91)" -->
+    <div class="q"><label class="lbl" for="cc">Phone country code *</label>
+      <select id="cc" required><option value="">Select</option><option value="1">United States (+1)</option><option value="x">Indiana Test Line</option><option value="91">India (+91)</option></select></div>
+
+    <!-- 3. Phone that must be exactly 10 digits -->
+    <div class="q"><label class="lbl" for="ph">Mobile number *</label>
+      <input type="tel" id="ph" required pattern="\d{10}" aria-describedby="ph-err" />
+      <div class="err" id="ph-err"></div></div>
+
+    <!-- 4. Yes/No select with long option texts -->
+    <div class="q"><label class="lbl" for="auth">Are you legally authorized to work in India? *</label>
+      <select id="auth" required><option value="">--</option><option value="y">Yes, I am legally authorized to work in India</option><option value="n">No, I am not authorized</option></select></div>
+
+    <!-- 5. Async type-to-search (states) -->
+    <div class="q"><span class="lbl" id="st-l">State *</span>
+      <input type="text" role="combobox" aria-autocomplete="list" aria-labelledby="st-l" aria-controls="st-menu" id="st" />
+      <div class="pop" role="listbox" id="st-menu" hidden></div><div class="err" id="st-err"></div></div>
+
+    <!-- 6. Custom degree dropdown with long names -->
+    <div class="q"><span class="lbl" id="dg-l">Highest education *</span>
+      <button type="button" class="trigger" id="dg" aria-haspopup="listbox" aria-labelledby="dg-l">Select...</button>
+      <div class="pop" id="dg-pop" hidden><div role="listbox"><div role="option">High School / 12th</div><div role="option">Diploma</div><div role="option">Bachelor of Technology (B.Tech) / B.E.</div><div role="option">Master of Technology (M.Tech)</div></div></div>
+      <div class="err" id="dg-err"></div></div>
+
+    <button type="button" id="next">Next</button>
+  </form>
+  <pre id="ok"></pre>
+<script>
+const $ = (s) => document.querySelector(s);
+// ---- 1. virtualised country list
+const COUNTRIES = ['Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Belarus','Belgium','Bhutan','Bolivia','Brazil','British Indian Ocean Territory','Bulgaria','Cambodia','Canada','Chile','China','Colombia','Croatia','Cuba','Cyprus','Czechia','Denmark','Egypt','Estonia','Ethiopia','Fiji','Finland','France','Germany','Ghana','Greece','Hungary','Iceland','Indiana (test)','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Japan','Jordan','Kenya','Kuwait','Laos','Latvia','Lebanon','Malaysia','Maldives','Mexico','Nepal','Netherlands','New Zealand','Nigeria','Norway','Oman','Pakistan','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Saudi Arabia','Singapore','South Africa','Spain','Sri Lanka','Sweden','Switzerland','Thailand','Turkey','Ukraine','United Arab Emirates','United Kingdom','United States','Vietnam','Zimbabwe'];
+let cQuery = '', cScroll = 0, country = '';
+const ROW = 32;
+function renderCountries() {
+  const list = $('#c-list');
+  const items = COUNTRIES.filter((c) => c.toLowerCase().includes(cQuery.toLowerCase()));
+  const start = Math.floor(cScroll / ROW);
+  list.innerHTML = `<div style="height:${items.length * ROW}px;position:relative">` + items.slice(start, start + 8).map((c, i) => `<div role="option" style="position:absolute;top:${(start + i) * ROW}px;left:0;right:0">${c}</div>`).join('') + '</div>';
+}
+$('#country').addEventListener('click', () => { const p = $('#c-pop'); p.hidden = !p.hidden; if (!p.hidden) { renderCountries(); $('#c-search').focus(); } });
+$('#c-search').addEventListener('input', (e) => { cQuery = e.target.value; cScroll = 0; $('#c-list').scrollTop = 0; renderCountries(); });
+$('#c-list').addEventListener('scroll', (e) => { cScroll = e.target.scrollTop; renderCountries(); });
+$('#c-list').addEventListener('click', (e) => { if (e.target.getAttribute('role') === 'option') { country = e.target.textContent; $('#country').textContent = country; $('#c-pop').hidden = true; } });
+// ---- 3. phone validation on blur
+$('#ph').addEventListener('blur', () => { const ok = /^\d{10}$/.test($('#ph').value); $('#ph').setAttribute('aria-invalid', String(!ok)); $('#ph-err').textContent = ok ? '' : 'Enter a valid 10-digit mobile number without the country code.'; });
+// ---- 5. async states
+const STATES = ['Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Karnataka', 'Kerala', 'Maharashtra'];
+let st = '', stTimer;
+$('#st').addEventListener('input', () => { clearTimeout(stTimer); stTimer = setTimeout(() => { const q = $('#st').value.toLowerCase(); const hits = q ? STATES.filter((s) => s.toLowerCase().startsWith(q)) : []; $('#st-menu').innerHTML = hits.map((s) => `<div role="option">${s}</div>`).join(''); $('#st-menu').hidden = !hits.length; }, 400); });
+$('#st-menu').addEventListener('click', (e) => { if (e.target.getAttribute('role') === 'option') { st = e.target.textContent; $('#st').value = st; $('#st-menu').hidden = true; } });
+// ---- 6. degree
+let dg = '';
+$('#dg').addEventListener('click', () => ($('#dg-pop').hidden = !$('#dg-pop').hidden));
+$('#dg-pop').addEventListener('click', (e) => { if (e.target.getAttribute('role') === 'option') { dg = e.target.textContent; $('#dg').textContent = dg; $('#dg-pop').hidden = true; } });
+// ---- Next: site-side validation
+$('#next').addEventListener('click', () => {
+  const errs = [];
+  const set = (id, msg) => { $(id).textContent = msg; if (msg) errs.push(msg); };
+  set('#c-err', country ? '' : 'Select a country.');
+  set('#st-err', st ? '' : 'Choose a state from the list.');
+  set('#dg-err', dg ? '' : 'Select your highest education.');
+  const ph = /^\d{10}$/.test($('#ph').value);
+  $('#ph').setAttribute('aria-invalid', String(!ph)); set('#ph-err', ph ? '' : 'Enter a valid 10-digit mobile number without the country code.');
+  if (!$('#cc').value) errs.push('cc'); if (!$('#auth').value) errs.push('auth');
+  $('#banner').style.display = errs.length ? 'block' : 'none';
+  if (!errs.length) $('#ok').textContent = 'ACCEPTED ' + JSON.stringify({ country, cc: $('#cc').selectedOptions[0].text, phone: $('#ph').value, auth: $('#auth').selectedOptions[0].text, state: st, degree: dg });
+});
+</script>
+</body>
+</html>

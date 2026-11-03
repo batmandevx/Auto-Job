@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Application – Recruit CRM-style test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 900px; margin: 24px auto; padding: 0 16px; background: #f6f6f6; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 28px; }
+    .field { position: relative; } .label { margin-bottom: 8px; }
+    .sel { display: flex; justify-content: space-between; padding: 11px 12px; background: #eee; border-radius: 6px; cursor: pointer; color: #888; }
+    .sel.has { color: #111; }
+    .menu { position: absolute; left: 0; right: 0; top: 100%; background: #fff; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.15); z-index: 5; }
+    .menu input { width: 100%; box-sizing: border-box; padding: 9px; border: 0; border-bottom: 1px solid #eee; }
+    .opt { padding: 9px 12px; cursor: pointer; } .opt:hover { background: #eee; }
+    input[type=text].plain { width: 100%; box-sizing: border-box; padding: 11px; border: 1px solid #ccc; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Apply: Software Engineer Trainee</h1>
+  <div class="grid" id="grid"></div>
+  <button id="submitBtn" style="margin-top:20px">Submit</button>
+  <pre id="out"></pre>
+<script>
+const QUESTIONS = [
+  ['passout', 'Passout year (Graduation or Post Graduation, whichever is latest applicable) *', ['2022', '2023', '2024', '2025', '2026', '2027', '2028']],
+  ['hubstaff', "I acknowledge and will adhere to the company's policy requiring the use of the time tracking tool (Hubstaff) for attendance, which includes capturing time and screenshots. Additionally, I will comply with the company's ISO and SOC 2 standards. *", ['I Agree', 'I Disagree']],
+  ['perf', 'I understand that my performance will be evaluated at regular intervals to ensure that I meet the established expectations. *', ['I Agree', 'I Disagree']],
+  ['laptop', 'text:Please specify the Laptop/PC configuration. *'],
+  ['six', 'I understand that my engagement with the company consists of a six-month training period. I acknowledge that continuation beyond this period is subject to performance evaluations and assessment scores as determined by the company. *', ['I Agree', 'I Disagree']],
+  ['hear', 'How did you get to know about the opportunity ? *', ['Linkedin', 'Naukri', 'Referral', 'Company Website', 'Other']],
+  ['nine', 'I understand that my engagement with the company includes a nine-month training period, and I acknowledge that continuation beyond this period will be subject to performance evaluations and assessment scores as determined by the company.', ['I agree', 'I disagree']],
+  ['attend', "I understand and commit to following the company’s attendance and conduct policies during training. I acknowledge that I must use my personal laptop/desktop and comply with the ISO/SOC 2 security standards as mandated by the company.", ['I agree', 'I disagree']],
+];
+const values = {};
+const grid = document.getElementById('grid');
+for (const [id, label, opts] of QUESTIONS) {
+  const f = document.createElement('div'); f.className = 'field';
+  if (label.startsWith('text:')) {
+    f.innerHTML = `<div class="label"><label for="${id}">${label.slice(5)}</label></div><input class="plain" type="text" id="${id}" />`;
+    grid.appendChild(f); continue;
+  }
+  f.innerHTML = `<div class="label">${label}</div><div class="sel" tabindex="0" id="${id}"><span>Search &amp; Select</span><span>⇕</span></div>`;
+  grid.appendChild(f);
+  const sel = f.querySelector('.sel');
+  let menu = null;
+  // Like many Vue/Angular selects: Escape and outside clicks are ignored; only the toggle closes it.
+  sel.addEventListener('click', () => {
+    if (menu) { menu.remove(); menu = null; return; }
+    menu = document.createElement('div'); menu.className = 'menu';
+    menu.innerHTML = `<input placeholder="Search.." /><div class="list">${opts.map((o) => `<div class="opt">${o}</div>`).join('')}</div>`;
+    f.appendChild(menu);
+    menu.querySelector('input').addEventListener('input', (e) => { const q = e.target.value.toLowerCase(); menu.querySelectorAll('.opt').forEach((o) => (o.style.display = o.textContent.toLowerCase().includes(q) ? '' : 'none')); });
+    menu.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('opt')) return;
+      values[id] = e.target.textContent; sel.firstElementChild.textContent = values[id]; sel.classList.add('has');
+      menu.remove(); menu = null;
+    });
+  });
+}
+document.getElementById('submitBtn').onclick = () => {
+  const missing = QUESTIONS.filter(([id, l]) => !l.startsWith('text:') && !values[id]).map(([id]) => id);
+  document.getElementById('out').textContent = missing.length ? 'MISSING: ' + missing.join(', ') : 'ALL ANSWERED ' + JSON.stringify(values);
+};
+</script>
+</body>
+</html>

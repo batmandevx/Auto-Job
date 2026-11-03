@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>My Experience – Workday-style test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 700px; margin: 24px auto; padding: 0 16px; }
+    label, .lbl { display: block; margin-top: 14px; } input, textarea { padding: 8px; box-sizing: border-box; }
+    .date input { width: 60px; } .prompt { position: relative; } .pop { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ccc; z-index: 3; }
+    [data-automation-id="promptOption"] { padding: 6px; cursor: pointer; } .chip { background: #eee; padding: 2px 8px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h2>Work Experience</h2>
+  <div id="work"></div>
+  <h2>Education</h2>
+  <h3>Education 1</h3>
+  <div id="edu"></div>
+  <pre id="out"></pre>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    // Two Workday-style work entries with split MM / YYYY date boxes.
+    let html = '';
+    for (const n of [1, 2]) {
+      html += `<h3>Work Experience ${n}</h3>
+        <div><label for="t${n}">Job Title*</label><input id="t${n}" type="text" /></div>
+        <div><label for="c${n}">Company*</label><input id="c${n}" type="text" /></div>
+        <div><label for="cur${n}"><input id="cur${n}" type="checkbox" /> I currently work here</label></div>
+        <div role="group" aria-labelledby="from${n}-l"><div id="from${n}-l" class="lbl">From*</div><div class="date">
+          <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" id="fm${n}" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" id="fy${n}" /></div></div>
+        <div role="group" aria-labelledby="to${n}-l"><div id="to${n}-l" class="lbl">To*</div><div class="date">
+          <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" id="tm${n}" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" id="ty${n}" /></div></div>
+        <div><label for="d${n}">Role Description</label><textarea id="d${n}"></textarea></div>`;
+    }
+    $('#work').innerHTML = html;
+    // Workday month boxes keep digits only, max 2.
+    document.querySelectorAll('[data-automation-id="dateSectionMonth-input"]').forEach((i) => i.addEventListener('input', () => (i.value = i.value.replace(/\D/g, '').slice(0, 2))));
+
+    // Prompts that only search on Enter; results replace the folder list.
+    const prompt = (id, label, folders, search) => {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `<label id="${id}-l">${label}</label><div class="prompt" data-automation-id="multiselectInputContainer" id="${id}"><div class="chips"></div>
+        <input type="text" data-automation-id="searchBox" placeholder="Search" role="combobox" aria-labelledby="${id}-l" /></div>`;
+      $('#edu').appendChild(wrap);
+      const box = wrap.querySelector('.prompt'); const input = box.querySelector('input'); let pop = null;
+      const show = (items) => {
+        pop?.remove(); pop = document.createElement('div'); pop.className = 'pop'; pop.setAttribute('role', 'listbox');
+        pop.innerHTML = items.map((t) => `<div data-automation-id="promptOption" role="option">${t}</div>`).join(''); box.appendChild(pop);
+        pop.onclick = (e) => { const t = e.target.textContent; if (folders.includes(t)) return; box.querySelector('.chips').innerHTML = `<div class="chip" data-automation-id="selectedItem">${t}</div>`; pop.remove(); pop = null; };
+      };
+      input.addEventListener('focus', () => show(folders));
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') setTimeout(() => show(search(input.value)), 200); });
+      return box;
+    };
+    const SCHOOLS = ['VIT University', 'Vellore Institute of Technology University', 'Other'];
+    prompt('school', 'School or University*', [], (q) => { const r = SCHOOLS.filter((s) => s.toLowerCase().includes(q.toLowerCase())); return r.length ? r : ['No Items.']; });
+    const FIELDS = ['Computer Science', 'Computer Engineering', 'Computer and Information Sciences'];
+    prompt('fos', 'Field of Study', ['Partial List (First 500 Entries)', 'All'], (q) => { const r = FIELDS.filter((s) => s.toLowerCase().includes(q.toLowerCase())); return r.length ? r : ['No Items.']; });
+
+    window.report = () => ({
+      work: [1, 2].map((n) => ({ title: $('#t' + n).value, company: $('#c' + n).value, from: `${$('#fm' + n).value}/${$('#fy' + n).value}`, to: `${$('#tm' + n).value}/${$('#ty' + n).value}`, desc: $('#d' + n).value.slice(0, 40) })),
+      school: $('#school [data-automation-id="selectedItem"]')?.textContent || '',
+      field: $('#fos [data-automation-id="selectedItem"]')?.textContent || '',
+    });
+  </script>
+</body>
+</html>

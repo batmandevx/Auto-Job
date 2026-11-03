@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Entry Level Software Developer – PyjamaHR-style test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .row { display: flex; gap: 8px; margin: 6px 0; } .row input { flex: 1; padding: 10px; }
+    .lbl { margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Entry Level Software Developer</h1>
+  <div class="grid">
+    <div><div class="lbl">First Name<span>*</span></div><div><input name="first_name" type="text" /><span>&#8203;</span></div></div>
+    <div><div class="lbl">Current Location (Optional)</div><div><input name="city" type="text" placeholder="City" /><span>&#8203;</span></div></div>
+    <div>
+      <div class="lbl">Work Link / Online Portfolio (Optional)</div>
+      <div id="links"></div>
+    </div>
+    <div><div class="lbl">Resume *</div><input type="file" name="resume" id="resume" /></div>
+  </div>
+  <pre id="out"></pre>
+<script>
+// Each row: a link input plus a "+" icon button (like PyjamaHR's data-testid="add-more-field-row").
+const links = document.getElementById('links');
+function addRow() {
+  const n = links.children.length;
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<div><span>&#8203;</span><input type="text" name="online_portfolio_${n}" placeholder="Work Link / Online Portfolio" /><span>&#8203;</span></div>`;
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.testid = 'add-more-field-row'; b.innerHTML = '<i class="flaticon2-plus p-0"></i>';
+  b.onclick = () => setTimeout(addRow, 150);
+  row.appendChild(b);
+  links.appendChild(row);
+}
+addRow();
+// Uploading the resume "parses" it and resets the other fields, like PyjamaHR does.
+document.getElementById('resume').addEventListener('change', () => setTimeout(() => {
+  document.querySelectorAll('input[type=text]').forEach((i) => (i.value = ''));
+  document.querySelector('[name=first_name]').value = 'Ayush';
+}, 300));
+window.report = () => Object.fromEntries([...document.querySelectorAll('input[type=text]')].map((i) => [i.name, i.value]));
+</script>
+</body>
+</html>

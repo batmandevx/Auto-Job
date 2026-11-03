@@ -1,0 +1,313 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img class="logo" src="logo.svg" alt="" width="32" height="32" />
+      <div>
+        <div class="brand-name">Auto Job</div>
+        <div class="brand-sub">you review, it applies</div>
+      </div>
+    </div>
+    <div class="head-right">
+      <span id="status" class="pill"><i class="dot"></i><span class="pill-text">checking…</span></span>
+      <div class="popout">
+        <button id="popoutBtn" class="icon-btn" title="Pop out: keep Auto Job open in a tab or window" aria-haspopup="menu">⧉</button>
+        <div class="popout-menu" id="popoutMenu" role="menu" hidden>
+          <button data-open="tab" role="menuitem">🗂 Open beside this page<small>A tab: use Arc Split View</small></button>
+          <button data-open="window" role="menuitem">🪟 Open in a window<small>Stays open while you work</small></button>
+          <button data-open="sidepanel" role="menuitem" id="openSide">▤ Open side panel<small>Chrome, Edge, Brave</small></button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="popup-note" id="popupNote" hidden>Running from the toolbar popup: keep it open while it works, or <button id="popoutNow" class="linkish">pop it out ⧉</button>.</div>
+
+  <nav class="tabs" role="tablist">
+    <span class="tab-pill" id="tabPill" aria-hidden="true"></span>
+    <button data-tab="apply" class="active" role="tab">
+      <svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>Apply</button>
+    <button data-tab="queue" role="tab">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Jobs</button>
+    <button data-tab="hacks" role="tab">
+      <svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 6h3v1a3 3 0 0 1-3 3M7 6H4v1a3 3 0 0 0 3 3"/></svg>Hacks</button>
+    <button data-tab="tracker" role="tab">
+      <svg viewBox="0 0 24 24"><path d="M4 4h6v7H4zM14 4h6v4h-6zM14 12h6v8h-6zM4 15h6v5H4z"/></svg>Tracker<span class="tab-count" id="trackCount"></span></button>
+    <button data-tab="profile" role="tab">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Profile</button>
+  </nav>
+
+  <main>
+    <!-- APPLY -->
+    <section id="tab-apply" class="tab active">
+      <div class="hero card">
+        <ol class="stepper" id="stepper">
+          <li data-step="job"><span class="bubble">1</span><span class="lbl">Job</span></li>
+          <li data-step="resume"><span class="bubble">2</span><span class="lbl">Resume</span></li>
+          <li data-step="fill"><span class="bubble">3</span><span class="lbl">Fill</span></li>
+          <li data-step="review"><span class="bubble">4</span><span class="lbl">Review</span></li>
+        </ol>
+        <button id="runAll" class="btn primary big">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M5 3l14 9-14 9z"/></svg>
+          <span>Do it all on this page</span>
+        </button>
+        <div class="toggles">
+          <label class="switch"><input type="checkbox" id="autoNext" checked /><span class="track"></span>Auto Next</label>
+          <label class="switch"><input type="checkbox" id="autoCover" checked /><span class="track"></span>Cover letter</label>
+          <label class="switch"><input type="checkbox" id="onlyEmpty" checked /><span class="track"></span>Only empty</label>
+          <label class="switch" title="Adds job keywords you don't have yet to a 'Familiar with / learning' line, so the resume covers 100% of keywords without claiming experience"><input type="checkbox" id="fillGaps" /><span class="track"></span>100% keywords</label>
+        </div>
+        <div id="progress" class="progress" aria-live="polite"></div>
+      </div>
+
+      <details class="card section">
+        <summary><span class="num">1</span>Job<span class="sum-meta" id="jobMeta"></span></summary>
+        <div class="section-body">
+          <button id="readJob" class="btn ghost">Read job from page</button>
+          <div class="grid2">
+            <input id="jobTitle" placeholder="Job title" />
+            <input id="jobCompany" placeholder="Company" />
+          </div>
+          <input id="jobLocation" placeholder="Location" />
+          <textarea id="jobDesc" rows="6" placeholder="Job description (read from the page, or paste it)"></textarea>
+        </div>
+      </details>
+
+      <details class="card section">
+        <summary><span class="num">2</span>Resume &amp; cover letter<span class="sum-meta" id="resumeMeta"></span></summary>
+        <div class="section-body">
+          <div class="row">
+            <button id="tailor" class="btn ghost">Tailor resume</button>
+            <button id="cover" class="btn ghost">Write cover letter</button>
+          </div>
+          <div id="tailorOut"></div>
+          <div id="coverOut"></div>
+        </div>
+      </details>
+
+      <details class="card section" open>
+        <summary><span class="num">3</span>Fill form<span class="sum-meta" id="fillMeta"></span></summary>
+        <div class="section-body">
+          <div class="row">
+            <button id="fill" class="btn ghost">Fill this page</button>
+            <button id="continue" class="btn ghost">Continue to next pages</button>
+          </div>
+          <div class="legend"><span><i class="sw ok"></i>filled</span><span><i class="sw warn"></i>please check</span><span><i class="sw bad"></i>needs you</span></div>
+          <div id="fillOut" class="results"></div>
+        </div>
+      </details>
+
+      <details class="card section" id="emailCard">
+        <summary><span class="num">✉</span>Apply by email<span class="sum-meta" id="emailMeta"></span></summary>
+        <div class="section-body">
+          <p class="hint">For jobs that say "send your resume to …". Writes the email, attaches your tailored resume and cover letter, and sends only after you confirm.</p>
+          <label class="field">To<input id="emailTo" placeholder="recruiter@company.com" /></label>
+          <div id="emailFound" class="chips"></div>
+          <label class="field">Subject<input id="emailSubject" placeholder="Application for …" /></label>
+          <label class="field">Message<textarea id="emailBody" rows="10" placeholder="Press “Write email” to draft it"></textarea></label>
+          <div class="attach" id="emailAttach"></div>
+          <div class="row">
+            <button id="draftEmail" class="btn ghost">Write email</button>
+            <button id="sendEmail" class="btn success">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg><span>Send email</span></button>
+          </div>
+          <div id="emailOut"></div>
+        </div>
+      </details>
+
+      <div class="card submit-card">
+        <button id="submit" class="btn success big">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+          <span>I've checked everything: Submit</span>
+        </button>
+        <div id="submitOut"></div>
+      </div>
+    </section>
+
+    <!-- QUEUE -->
+    <section id="tab-queue" class="tab">
+      <div class="card">
+        <h3 class="card-title">Your job boards</h3>
+        <p class="hint">Tap a board to list its jobs, or scan them all at once.</p>
+        <div id="boards" class="boards"></div>
+        <button id="scanAll" class="btn primary block">
+          <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7" fill="none"/><path d="M20 20l-3.5-3.5" fill="none"/></svg>
+          <span>Scan all my boards</span>
+        </button>
+        <p class="hint" style="margin-top:12px">Or paste any careers page / job board link:</p>
+        <input id="boardUrl" placeholder="https://boards.greenhouse.io/company" />
+        <div class="row">
+          <button id="openBoard" class="btn primary">Open &amp; find jobs</button>
+          <button id="scanBoard" class="btn ghost">Find on current tab</button>
+          <button id="saveBoard" class="btn ghost sm" title="Add this link to your boards">+ Save board</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="jobFilter" placeholder="Filter: engineer, ml, data, sde" />
+        </div>
+        <label class="switch" style="margin:8px 0 2px"><input type="checkbox" id="includePremium" /><span class="track"></span>Include premium jobs (I'm logged in with premium)</label>
+        <div class="row between">
+          <span class="row" style="margin:0;gap:6px"><button id="selectAll" class="btn ghost sm">Select all shown</button><button id="clearJobs" class="btn ghost sm">Clear</button></span>
+          <span id="jobCount" class="hint"></span>
+        </div>
+        <div id="jobList" class="joblist"></div>
+      </div>
+      <div class="card queue-actions">
+        <div class="row">
+          <button id="startQueue" class="btn primary">Start applying</button>
+          <button id="skipJob" class="btn ghost">Skip this job</button>
+          <button id="saveSelected" class="btn ghost" title="Add ticked jobs to your Tracker as “To apply”">☆ Save to tracker</button>
+        </div>
+        <div id="queueOut" class="hint"></div>
+      </div>
+      <div class="card script-card">
+        <div class="row between" style="margin:0">
+          <div>
+            <h3 class="card-title">Wellfound auto-apply script</h3>
+            <p class="hint" style="margin:0">Your console script: opens each job, fills your pitch, and applies.</p>
+          </div>
+          <span class="badge">Wellfound</span>
+        </div>
+        <ol class="steps-mini">
+          <li>Open <a href="https://wellfound.com/jobs" target="_blank">wellfound.com/jobs</a> and sign in</li>
+          <li>Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>J</kbd> to open the Console</li>
+          <li>Paste (<kbd>⌘</kbd><kbd>V</kbd>) and press <kbd>Enter</kbd></li>
+        </ol>
+        <p class="hint warn-note">⚠️ It submits each application straight away (no review), picks the first relocation option, and answers custom radio questions by position. Watch the first few.</p>
+        <div class="row">
+          <button id="copyWellfound" class="btn primary">
+            <svg viewBox="0 0 24 24" class="ico"><rect x="9" y="9" width="11" height="11" rx="2" fill="none"/><path d="M5 15V5a2 2 0 0 1 2-2h8" fill="none"/></svg>
+            <span>Copy script</span>
+          </button>
+          <button id="viewWellfound" class="btn ghost">View</button>
+        </div>
+        <pre id="wellfoundCode" class="code" hidden></pre>
+      </div>
+    </section>
+
+    <!-- HACKATHONS -->
+    <section id="tab-hacks" class="tab">
+      <div class="card hero">
+        <div class="row between" style="margin:0">
+          <div><h3 class="card-title" style="margin:0">Hackathons</h3><div class="hint" style="margin:2px 0 0" id="hackSummary">Devpost · Unstop · Devfolio · HackerEarth · Hack2skill · lablab.ai · Taikai · HackIndia</div></div>
+          <button id="refreshHacks" class="btn primary sm">↻ Refresh</button>
+        </div>
+        <div class="platforms" id="hackPlatforms"></div>
+      </div>
+      <div class="card">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="hackSearch" placeholder="Search: AI, web3, agents, fintech, city…" />
+        </div>
+        <div class="row between" style="margin:8px 0 4px">
+          <div class="seg" id="hackMode">
+            <button data-m="all" class="on">All</button><button data-m="online">Online</button><button data-m="in-person">In person</button><button data-m="hybrid">Hybrid</button>
+          </div>
+          <select id="hackSort" class="select">
+            <option value="deadline">Closing soon</option>
+            <option value="prize">Biggest prize</option>
+            <option value="popular">Most popular</option>
+          </select>
+        </div>
+        <div class="row" style="margin:4px 0">
+          <label class="switch"><input type="checkbox" id="hackSaved" /><span class="track"></span>Saved only</label>
+          <label class="switch"><input type="checkbox" id="hackIndia" /><span class="track"></span>India / online</label>
+        </div>
+        <div id="hackList" class="hacklist"><div class="empty"><span class="big">🏆</span>Press Refresh to load hackathons.</div></div>
+      </div>
+    </section>
+
+    <!-- TRACKER -->
+    <section id="tab-tracker" class="tab">
+      <div class="card">
+        <div class="row between" style="margin:0 0 6px">
+          <h3 class="card-title" style="margin:0">Your applications</h3>
+          <button id="refreshTracker" class="btn ghost sm">↻ Refresh</button>
+        </div>
+        <div class="stat-strip" id="trackStats"></div>
+        <div class="funnel" id="trackFunnel"></div>
+      </div>
+      <div class="card">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="trackSearch" placeholder="Search company or role" />
+        </div>
+        <div class="status-filter" id="trackFilter"></div>
+        <div id="trackList" class="tracklist"></div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Add an application</h3>
+        <div class="grid2">
+          <input id="addTitle" placeholder="Role" />
+          <input id="addCompany" placeholder="Company" />
+        </div>
+        <input id="addUrl" placeholder="Job link (optional)" />
+        <div class="row">
+          <button id="addCurrent" class="btn ghost sm">Use current tab</button>
+          <button id="addApp" class="btn primary sm">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section id="tab-profile" class="tab">
+      <div class="card">
+        <h3 class="card-title">Resume</h3>
+        <label class="drop">
+          <input type="file" id="resumeFile" accept=".pdf,.docx,.txt" multiple />
+          <svg viewBox="0 0 24 24"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
+          <span><b>Choose resume files</b><br><small>PDF / DOCX · pick several versions to merge them</small></span>
+        </label>
+        <button id="importResume" class="btn primary">Import resume</button>
+        <div id="profileOut"></div>
+      </div>
+
+      <details class="card section">
+        <summary><span class="num">👤</span>Personal details</summary>
+        <div class="section-body" id="personal"></div>
+      </details>
+
+      <details class="card section">
+        <summary><span class="num">📁</span>Documents<span class="sum-meta" id="docsMeta"></span></summary>
+        <div class="section-body">
+          <p class="hint">Attach once; upload fields that ask for them are filled automatically. Stored only on this Mac (data/documents).</p>
+          <div id="docs" class="docs"></div>
+          <input type="file" id="docFile" accept=".pdf,.png,.jpg,.jpeg" hidden />
+        </div>
+      </details>
+
+      <details class="card section">
+        <summary><span class="num">💬</span>Standard answers</summary>
+        <div class="section-body">
+          <p class="hint">Used for questions every application asks. Leave blank to answer by hand.</p>
+          <div id="answers"></div>
+        </div>
+      </details>
+      <button id="saveProfile" class="btn primary block">Save details &amp; answers</button>
+
+      <details class="card section">
+        <summary><span class="num">🧠</span>Remembered answers</summary>
+        <div class="section-body">
+          <p class="hint">Answers from forms you submitted, reused when the same question comes up.</p>
+          <div id="bank"></div>
+        </div>
+      </details>
+
+      <details class="card section">
+        <summary><span class="num">⚙️</span>Server</summary>
+        <div class="section-body"><input id="serverUrl" placeholder="http://localhost:8787" /></div>
+      </details>
+    </section>
+  </main>
+
+  <div id="toast" role="status"></div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

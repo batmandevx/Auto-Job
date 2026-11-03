@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AI Engineer – Sarvam Labs (multi-step test form)</title>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"JobPosting","title":"AI Engineer (LLM Applications)","hiringOrganization":{"@type":"Organization","name":"Sarvam Labs"},
+   "jobLocation":{"@type":"Place","address":{"addressLocality":"Bengaluru","addressRegion":"Karnataka","addressCountry":"IN"}},
+   "description":"<p>Build production LLM applications.</p><ul><li>RAG pipelines and agentic workflows with LangChain/LangGraph</li><li>FastAPI services on AWS with Docker and Kubernetes</li><li>Evaluate and fine-tune models (LoRA)</li><li>Strong Python, vector databases, CI/CD</li><li>Nice to have: publications, hackathon wins</li></ul>"}
+  </script>
+  <style>
+    body { font: 14px system-ui; max-width: 680px; margin: 24px auto; padding: 0 16px; }
+    .q { margin: 14px 0; } .lbl { display: block; margin-bottom: 4px; font-weight: 500; }
+    input[type=text], input[type=email], input[type=tel], input[type=date], input[type=number], textarea, select { width: 100%; padding: 6px; box-sizing: border-box; }
+    .step { display: none; } .step.on { display: block; }
+    [role=radio], [role=switch], .yn button { display: inline-block; padding: 4px 10px; border: 1px solid #888; border-radius: 4px; margin-right: 6px; cursor: pointer; background: #fff; }
+    [role=radio][aria-checked=true], .yn button[aria-pressed=true], [role=switch][aria-checked=true] { background: #2557d6; color: #fff; }
+    .combo { position: relative; } .menu { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #888; z-index: 5; max-height: 160px; overflow: auto; }
+    .menu [role=option] { padding: 4px 8px; cursor: pointer; } .menu [role=option]:hover { background: #eef; }
+    .drop { border: 2px dashed #888; padding: 14px; text-align: center; position: relative; }
+    .drop input[type=file] { position: absolute; inset: 0; opacity: 0; }
+    .err { color: #c00; } [contenteditable] { border: 1px solid #888; min-height: 50px; padding: 6px; }
+  </style>
+</head>
+<body>
+  <h1>AI Engineer (LLM Applications)</h1>
+  <p>Sarvam Labs · Bengaluru, India · <b>Step <span id="stepNo">1</span> of 4</b></p>
+  <form id="app" novalidate>
+    <!-- STEP 1: personal -->
+    <div class="step on" data-step="1">
+      <div class="q"><label class="lbl" for="fn">Legal first name *</label><input type="text" id="fn" name="fn" required /></div>
+      <div class="q"><label class="lbl" for="ln">Legal last name *</label><input type="text" id="ln" name="ln" required /></div>
+      <div class="q"><label class="lbl" for="em">Email address *</label><input type="email" id="em" name="em" required /></div>
+      <div class="q"><span class="lbl">Phone *</span>
+        <select name="cc" aria-label="Country code"><option value="">Code</option><option>+1</option><option>+44</option><option>+91</option></select>
+        <input type="tel" name="phone" aria-label="Phone number (10 digits)" maxlength="10" required /></div>
+      <div class="q"><label class="lbl" for="dob">Date of birth</label><input type="date" id="dob" name="dob" /></div>
+      <div class="q"><span class="lbl" id="g-l">Gender</span>
+        <div role="radiogroup" aria-labelledby="g-l"><div role="radio" aria-checked="false" tabindex="0">Male</div><div role="radio" aria-checked="false" tabindex="0">Female</div><div role="radio" aria-checked="false" tabindex="0">Non-binary</div><div role="radio" aria-checked="false" tabindex="0">Prefer not to say</div></div></div>
+      <div class="q"><span class="lbl" id="city-l">Current city *</span>
+        <div class="combo"><input type="text" role="combobox" aria-autocomplete="list" aria-labelledby="city-l" aria-controls="city-menu" aria-expanded="false" id="city" name="city" />
+        <div class="menu" id="city-menu" role="listbox" hidden></div></div></div>
+      <div class="q"><label class="lbl" for="pin">PIN code</label><input type="text" id="pin" name="pin" /></div>
+      <shadow-field></shadow-field>
+    </div>
+
+    <!-- STEP 2: documents & education -->
+    <div class="step" data-step="2">
+      <div class="q"><span class="lbl">Resume / CV *</span><div class="drop">Drop your resume here or click<input type="file" name="resume" accept=".pdf,.doc,.docx" required /></div><div id="resumeName"></div></div>
+      <div class="q"><span class="lbl">Cover letter (optional)</span><div class="drop">Upload cover letter<input type="file" name="cover" accept=".pdf" /></div><div id="coverName"></div></div>
+      <div class="q"><span class="lbl">Recent passport-size photo</span><input type="file" name="photo" accept="image/*" aria-label="Recent passport-size photo" /></div>
+      <div class="q"><span class="lbl" id="deg-l">Highest degree *</span>
+        <div class="combo"><button type="button" id="deg" aria-haspopup="listbox" aria-labelledby="deg-l" aria-controls="deg-menu">Select...</button>
+        <div class="menu" id="deg-menu" role="listbox" hidden>
+          <div role="option">High School</div><div role="option">Associate's Degree</div><div role="option">Bachelor's Degree</div><div role="option">Master's Degree</div><div role="option">PhD</div></div></div></div>
+      <div class="q"><label class="lbl" for="gy">Expected graduation year</label><input type="number" id="gy" name="gy" min="2020" max="2035" /></div>
+    </div>
+
+    <!-- STEP 3: screening questions -->
+    <div class="step" data-step="3">
+      <div class="q"><span class="lbl">Are you legally authorized to work in India? *</span>
+        <div class="yn button-group" role="group"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+      <div class="q"><span class="lbl" id="sp-l">Will you require visa sponsorship for this role? *</span>
+        <div class="combo"><input type="text" role="combobox" aria-autocomplete="list" readonly aria-labelledby="sp-l" aria-controls="sp-menu" id="sp" placeholder="Select..." />
+        <div class="menu" id="sp-menu" role="listbox" hidden><div role="option">Yes, I will require sponsorship</div><div role="option">No, I will not require sponsorship</div></div></div></div>
+      <div class="q"><label class="lbl" for="yrs">Years of experience with Python</label>
+        <select id="yrs" name="yrs"><option value="">Please select</option><option>0-1 years</option><option>1-2 years</option><option>3-5 years</option><option>5+ years</option></select></div>
+      <div class="q"><span class="lbl">Which of these have you used in production?</span>
+        <label><input type="checkbox" name="tech" value="langchain" /> LangChain</label>
+        <label><input type="checkbox" name="tech" value="k8s" /> Kubernetes</label>
+        <label><input type="checkbox" name="tech" value="cobol" /> COBOL</label>
+        <label><input type="checkbox" name="tech" value="pinecone" /> Pinecone</label></div>
+      <div class="q"><span class="lbl">Are you currently employed? *</span>
+        <label><input type="radio" name="employed" value="yes" /> Yes</label><label><input type="radio" name="employed" value="no" /> No</label></div>
+      <div class="q" id="noticeQ" hidden><label class="lbl" for="notice">If yes, what is your notice period?</label><input type="text" id="notice" name="notice" /></div>
+      <div class="q"><label class="lbl" for="why">Why do you want to join Sarvam Labs? (max 500 characters) *</label><textarea id="why" name="why" maxlength="500" rows="4" required></textarea></div>
+      <div class="q"><span class="lbl" id="add-l">Anything else you'd like us to know?</span><div contenteditable="true" aria-labelledby="add-l" id="addl"></div></div>
+      <div class="q"><span class="lbl" id="cons-l">I certify that the information provided is accurate *</span><div role="switch" aria-checked="false" aria-labelledby="cons-l" tabindex="0">Off</div></div>
+    </div>
+
+    <!-- STEP 4: review -->
+    <div class="step" data-step="4"><h3>Review</h3><pre id="review"></pre></div>
+
+    <p class="err" role="alert" id="err"></p>
+    <button type="button" id="back">Back</button>
+    <button type="button" id="next">Next</button>
+    <button type="button" id="submitBtn" hidden>Submit application</button>
+  </form>
+  <pre id="done"></pre>
+
+<script>
+// ---- custom widgets, written the way React component libraries behave ----
+customElements.define('shadow-field', class extends HTMLElement {
+  connectedCallback() {
+    const r = this.attachShadow({ mode: 'open' });
+    r.innerHTML = '<div class="q"><label for="li" style="display:block;font-weight:500">LinkedIn profile URL</label><input id="li" name="li" type="text" style="width:100%;padding:6px;box-sizing:border-box"></div>';
+  }
+});
+const CITIES = ['Chennai, Tamil Nadu, India', 'Chandigarh, India', 'Bengaluru, Karnataka, India', 'Lucknow, Uttar Pradesh, India', 'Mumbai, Maharashtra, India'];
+const city = document.getElementById('city'), cityMenu = document.getElementById('city-menu');
+let cityTimer;
+city.addEventListener('input', () => {
+  clearTimeout(cityTimer);
+  cityTimer = setTimeout(() => { // async "search" like a real API
+    const q = city.value.toLowerCase();
+    const hits = q ? CITIES.filter((c) => c.toLowerCase().includes(q)) : [];
+    cityMenu.innerHTML = hits.map((c) => `<div role="option">${c}</div>`).join('');
+    cityMenu.hidden = !hits.length;
+  }, 300);
+});
+cityMenu.addEventListener('click', (e) => { if (e.target.role === 'option') { city.value = e.target.textContent; city.dataset.picked = '1'; cityMenu.hidden = true; } });
+
+function wireDropdown(trigger, menu, onPick) {
+  trigger.addEventListener('mousedown', (e) => { e.preventDefault(); menu.hidden = !menu.hidden; });
+  trigger.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') menu.hidden = false; if (e.key === 'Escape') menu.hidden = true; });
+  menu.addEventListener('click', (e) => { if (e.target.getAttribute('role') === 'option') { onPick(e.target.textContent); menu.hidden = true; } });
+}
+const deg = document.getElementById('deg');
+wireDropdown(deg, document.getElementById('deg-menu'), (t) => (deg.textContent = t));
+const sp = document.getElementById('sp');
+wireDropdown(sp, document.getElementById('sp-menu'), (t) => (sp.value = t));
+
+document.querySelectorAll('[role=radio]').forEach((r) => r.addEventListener('click', () => {
+  r.parentElement.querySelectorAll('[role=radio]').forEach((x) => x.setAttribute('aria-checked', 'false'));
+  r.setAttribute('aria-checked', 'true');
+}));
+document.querySelectorAll('.yn button').forEach((b) => b.addEventListener('click', () => {
+  b.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  b.setAttribute('aria-pressed', 'true');
+}));
+document.querySelectorAll('[role=switch]').forEach((s) => s.addEventListener('click', () => {
+  const on = s.getAttribute('aria-checked') !== 'true'; s.setAttribute('aria-checked', on); s.textContent = on ? 'On' : 'Off';
+}));
+document.querySelectorAll('input[name=employed]').forEach((r) => r.addEventListener('change', () => {
+  document.getElementById('noticeQ').hidden = r.value !== 'yes' || !r.checked;
+}));
+for (const n of ['resume', 'cover']) document.querySelector(`input[name=${n}]`).addEventListener('change', (e) => (document.getElementById(n + 'Name').textContent = '✓ ' + (e.target.files[0]?.name || '')));
+
+// ---- steps with validation ----
+let step = 1;
+const $ = (s) => document.querySelector(s);
+function values() {
+  const f = $('#app');
+  const li = document.querySelector('shadow-field').shadowRoot.getElementById('li').value;
+  return {
+    name: f.fn.value + ' ' + f.ln.value, email: f.em.value, phone: f.cc.value + ' ' + f.phone.value, dob: f.dob.value,
+    gender: $('[role=radiogroup] [aria-checked=true]')?.textContent || '', city: city.value + (city.dataset.picked ? ' (picked from list)' : ' (typed only!)'),
+    pin: f.pin.value, linkedin: li,
+    resume: f.resume.files[0]?.name, cover: f.cover.files[0]?.name, photo: f.photo.files[0]?.name,
+    degree: deg.textContent, gradYear: f.gy.value,
+    authorized: $('.yn [aria-pressed=true]')?.textContent || '', sponsorship: sp.value, python: f.yrs.value,
+    tech: [...f.querySelectorAll('input[name=tech]:checked')].map((c) => c.value), employed: f.employed.value, notice: f.notice.value,
+    why: f.why.value.length + ' chars', addl: $('#addl').textContent.slice(0, 60), certified: $('[role=switch]').getAttribute('aria-checked'),
+  };
+}
+function validate(n) {
+  const v = values();
+  const miss = [];
+  if (n === 1) { if (!$('#fn').value) miss.push('first name'); if (!v.email) miss.push('email'); if (!$('[name=phone]').value) miss.push('phone'); if (!city.dataset.picked) miss.push('city (choose from the list)'); }
+  if (n === 2) { if (!v.resume) miss.push('resume'); if (deg.textContent === 'Select...') miss.push('degree'); }
+  if (n === 3) { if (!v.authorized) miss.push('work authorization'); if (!v.sponsorship) miss.push('sponsorship'); if (!v.employed) miss.push('employment'); if (!$('#why').value) miss.push('why'); if (v.certified !== 'true') miss.push('certification'); }
+  return miss;
+}
+function show(n) {
+  step = n;
+  document.querySelectorAll('.step').forEach((s) => s.classList.toggle('on', +s.dataset.step === n));
+  $('#stepNo').textContent = n;
+  $('#next').hidden = n === 4;
+  $('#submitBtn').hidden = n !== 4;
+  if (n === 4) $('#review').textContent = JSON.stringify(values(), null, 1);
+}
+$('#next').addEventListener('click', () => {
+  const miss = validate(step);
+  $('#err').textContent = miss.length ? 'Please complete: ' + miss.join(', ') : '';
+  if (!miss.length) setTimeout(() => show(step + 1), 200); // async like an SPA route change
+});
+$('#back').addEventListener('click', () => step > 1 && show(step - 1));
+$('#submitBtn').addEventListener('click', () => { $('#done').textContent = 'SUBMITTED\n' + JSON.stringify(values(), null, 1); });
+</script>
+</body>
+</html>

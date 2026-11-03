@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Intern Bachelors AI – flagged entry card test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .card { border: 1px solid #e33; border-radius: 30px; padding: 14px 20px; display: flex; justify-content: space-between; }
+    .card .fix { color: #e33; } .card button { border: 0; background: none; cursor: pointer; }
+    label { display: block; margin-top: 12px; } select, input { width: 100%; padding: 8px; }
+  </style>
+</head>
+<body>
+  <section id="edu"><h3>Education *</h3><div id="slot"></div></section>
+  <button type="button" id="next">Next</button>
+  <pre id="out"></pre>
+<script>
+const state = { degree: '', level: '', major: 'Computer Science and Engineering', school: 'Vellore Institute of Technology' };
+const DEGREES = ['Associates', 'Bachelor of Applied Arts', 'Bachelor of Applied Science', 'Bachelor of Arts', 'Bachelor of Business Administration', 'Bachelor of Engineering', 'Bachelor of Fine Arts', 'Bachelor of Science', 'Bachelors', 'Doctor of Business Administration', 'Master of Science'];
+const LEVELS = ['High School', 'Associate Degree', "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+const slot = document.getElementById('slot');
+function card() {
+  const missing = !state.degree;
+  slot.innerHTML = `<div class="card"><div><b>${state.major}</b><div>${state.school} 01/2023 - 05/2027</div>${missing ? '<div class="fix">Fields to fix: 1</div>' : ''}</div>
+    <div><button type="button" class="edit" aria-label="Edit"><svg width="16" height="16" class="icon-pencil"><circle cx="8" cy="8" r="7" fill="#e60"/></svg></button><button type="button" aria-label="Delete">×</button></div></div>`;
+  slot.querySelector('.edit').onclick = () => setTimeout(editor, 200);
+}
+function editor() {
+  const opts = (list, v) => '<option value=""></option>' + list.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('');
+  slot.innerHTML = `<div class="editor"><label for="dg">Degree *</label><select id="dg" required>${opts(DEGREES, state.degree)}</select>
+    <label for="mj">Major</label><input id="mj" value="${state.major}" />
+    <label for="lv">Education Level</label><select id="lv">${opts(LEVELS, state.level)}</select>
+    <div><button type="button" id="cancel">Cancel</button> <button type="button" id="save">ADD EDUCATION</button></div></div>`;
+  slot.querySelector('#save').onclick = () => { state.degree = slot.querySelector('#dg').value; state.level = slot.querySelector('#lv').value; card(); };
+  slot.querySelector('#cancel').onclick = card;
+}
+card();
+window.report = () => ({ ...state, flagged: !!document.querySelector('.fix') });
+</script>
+</body>
+</html>

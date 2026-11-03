@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Software Engineer – job page test</title>
+  <style>body { font: 15px system-ui; max-width: 760px; margin: 24px auto; padding: 0 16px; } button { padding: 10px 18px; margin-right: 8px; }</style>
+</head>
+<body>
+  <div class="top"><input type="text" placeholder="Search job title, location or military code" aria-label="Search jobs" /></div>
+  <nav><a href="#">Careers home</a> <a href="#">Students</a></nav>
+  <h1>Software Engineer</h1>
+  <p>Posting Start Date 10/29/2026 · Full time</p>
+  <button type="button" aria-pressed="false" id="save">Save job</button>
+  <button type="button" id="apply">Apply now</button>
+  <h2>Job Description</h2>
+  <p>U.S. Bank is seeking a Software Engineer who will contribute toward the success of our technology initiatives in our digital transformation journey. Agile software development lifecycle and DevOps principles.</p>
+  <div><label for="news">Get job alerts: email</label><input id="news" type="text" /></div>
+  <script>
+    window.clicked = [];
+    document.getElementById('save').onclick = () => window.clicked.push('save');
+    document.getElementById('apply').onclick = () => {
+      window.clicked.push('apply');
+      document.body.innerHTML = '<h1>Apply</h1><label for="fn">First name</label><input id="fn" /><label for="em">Email</label><input id="em" type="email" /><button type="submit">Apply</button>';
+    };
+  </script>
+</body>
+</html>

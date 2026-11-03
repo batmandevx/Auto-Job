@@ -1,0 +1,17 @@
+# Secrets: API keys and the Gmail app password live here. Never commit.
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Your personal data: profile, documents (ID, marksheets, photo), tracker, generated resumes.
+data/
+samples/
+
+node_modules/
+*.log
+.DS_Store
+.kilo/
+.kilocode/

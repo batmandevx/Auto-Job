@@ -1,0 +1,28 @@
+Riya Sharma
+riya.sharma@example.com | +91 98765 43210 | Pune, India | linkedin.com/in/riya-sample | github.com/riya-sample
+
+SUMMARY
+Software engineer with 3 years of experience building backend services.
+
+EXPERIENCE
+Software Engineer, Finlytics Pvt Ltd, Pune — Jul 2022 – Present
+- Built REST APIs in Node.js and TypeScript handling 2M requests/day
+- Moved reporting jobs to Kafka consumers, cutting report latency from 40 min to 6 min
+- Set up Docker-based CI on GitHub Actions for 8 services
+- Wrote React dashboards for the ops team
+
+Intern, ShopKart, Bengaluru — Jan 2022 – Jun 2022
+- Added Redis caching to the product catalog API, reducing p95 latency by 35%
+- Wrote Python scripts to clean vendor CSV feeds
+
+PROJECTS
+DocChat — Node.js, PostgreSQL, OpenAI API: RAG chatbot over PDF manuals, used by 200 students
+Portfolio site — Next.js
+
+SKILLS
+Languages: JavaScript, TypeScript, Python, SQL
+Backend: Node.js, Express, PostgreSQL, Redis, Kafka
+Tools: Docker, GitHub Actions, AWS (EC2, S3), Linux
+
+EDUCATION
+B.E. Computer Engineering, Pune Institute of Technology, 2018 – 2022, CGPA 8.4

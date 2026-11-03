@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>My Experience – sections test</title>
+  <style>
+    body { font: 14px system-ui; max-width: 680px; margin: 24px auto; padding: 0 16px; }
+    section { border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+    .entry { border-top: 1px dashed #ccc; padding-top: 8px; margin-top: 8px; }
+    label { display: block; margin: 8px 0 2px; font-weight: 600; } input[type=text], textarea, select { width: 100%; padding: 6px; box-sizing: border-box; }
+    .tags { display: flex; flex-wrap: wrap; gap: 4px; border: 1px solid #aaa; padding: 4px; } .tag { background: #e0e7ff; padding: 2px 8px; border-radius: 10px; }
+    .tags input { border: 0; flex: 1; min-width: 120px; outline: none; }
+  </style>
+</head>
+<body>
+  <h1>My Experience</h1>
+  <section id="work" aria-label="Work Experience"><h3>Work Experience</h3><div id="workEntries"></div><button type="button" id="addWork">+ Add</button></section>
+  <section id="edu"><h3>Education</h3><div id="eduEntries"></div><button type="button" id="addEdu">Add</button></section>
+  <section id="skills"><h3>Skills</h3>
+    <label id="sk-l">Skills (type a skill and press Enter)</label>
+    <div class="tags multiselect" id="tagbox"><input type="text" id="skillInput" aria-labelledby="sk-l" placeholder="Add skills" /></div>
+  </section>
+  <section id="later"></section>
+  <button type="button" id="save">Save and Continue</button>
+  <pre id="out"></pre>
+<script>
+const $ = (s) => document.querySelector(s);
+let w = 0, e = 0;
+const datepicker = (id, label) => `<label for="${id}">${label}</label><input type="text" id="${id}" class="datepicker" placeholder="MM/YYYY" readonly />`;
+$('#addWork').onclick = () => {
+  w++;
+  const d = document.createElement('div'); d.className = 'entry';
+  d.innerHTML = `<label for="jt${w}">Job Title *</label><input type="text" id="jt${w}" required />
+    <label for="co${w}">Company *</label><input type="text" id="co${w}" required />
+    ${datepicker('sd' + w, 'From *')}${datepicker('ed' + w, 'To')}
+    <label><input type="checkbox" id="cur${w}" /> I currently work here</label>
+    <label for="ds${w}">Role Description</label><textarea id="ds${w}" rows="2"></textarea>`;
+  setTimeout(() => $('#workEntries').appendChild(d), 250); // entries render asynchronously
+};
+$('#addEdu').onclick = () => {
+  e++;
+  const d = document.createElement('div'); d.className = 'entry';
+  d.innerHTML = `<label for="sc${e}">School or University *</label><input type="text" id="sc${e}" required />
+    <label for="dg${e}">Degree *</label><select id="dg${e}"><option value="">Select</option><option>High School</option><option>Bachelor of Technology</option><option>Master of Science</option></select>
+    ${datepicker('gd' + e, 'Graduation date')}`;
+  setTimeout(() => $('#eduEntries').appendChild(d), 250);
+};
+// Tag input: Enter turns the text into a chip
+$('#skillInput').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter' || !ev.target.value.trim()) return;
+  const t = document.createElement('span'); t.className = 'tag'; t.textContent = ev.target.value.trim();
+  $('#tagbox').insertBefore(t, ev.target); ev.target.value = '';
+});
+// A question that appears later (staged loading)
+setTimeout(() => { $('#later').innerHTML = '<h3>Additional</h3><label for="hear">How did you hear about this job? *</label><input type="text" id="hear" required />'; }, 1500);
+$('#save').onclick = () => {
+  const val = (id) => $('#' + id)?.value || '';
+  $('#out').textContent = JSON.stringify({
+    work: [...Array(w)].map((_, i) => ({ title: val('jt' + (i + 1)), company: val('co' + (i + 1)), from: val('sd' + (i + 1)), to: val('ed' + (i + 1)), current: $('#cur' + (i + 1))?.checked })),
+    edu: [...Array(e)].map((_, i) => ({ school: val('sc' + (i + 1)), degree: $('#dg' + (i + 1))?.selectedOptions[0]?.text, grad: val('gd' + (i + 1)) })),
+    skills: [...document.querySelectorAll('.tag')].map((t) => t.textContent),
+    heard: val('hear'),
+  }, null, 1);
+};
+</script>
+</body>
+</html>

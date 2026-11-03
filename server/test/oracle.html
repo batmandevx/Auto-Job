@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Intern Bachelors AI | Honeywell Aerospace Careers (Oracle-style test)</title>
+  <meta property="og:site_name" content="Aerospace" />
+  <style>
+    body { font: 15px system-ui; max-width: 720px; margin: 30px auto; padding: 0 16px; }
+    .boxes { display: flex; gap: 10px; } .boxes input { width: 46px; height: 46px; text-align: center; font-size: 22px; border-radius: 50%; border: 1px solid #aaa; }
+    .step { display: none; } .step.on { display: block; } .err { color: #c00; }
+    .dialog { display: none; }
+  </style>
+</head>
+<body>
+  <!-- Oracle keeps a hidden session-timeout dialog in the page -->
+  <div class="dialog" role="dialog" aria-modal="true"><h1>Are You Still There?</h1><p>Your session is about to expire.</p></div>
+
+  <div class="step on" id="s1">
+    <h1>Intern Bachelors AI</h1>
+    <div class="job-details"><p>Honeywell Aerospace is hiring an AI intern to build machine learning models, LLM-based assistants and data pipelines in Python. You will work with PyTorch, TensorFlow and AWS, write production code, collaborate with engineers in Bengaluru, and present results to stakeholders. Requirements: pursuing a Bachelor's in Computer Science or a related field, strong Python, machine learning fundamentals, and good communication.</p></div>
+    <button id="applyNow">Apply Now</button>
+  </div>
+
+  <div class="step" id="s2">
+    <h2>You don't need to have an account</h2>
+    <label for="em">Email Address *</label><br />
+    <input id="em" type="text" aria-required="true" style="width:100%;padding:8px" />
+    <p><label><input type="checkbox" id="priv" /> I have read the <a href="#">Important Privacy Information</a> *</label></p>
+    <button id="cancel">◂ CANCEL</button> <button id="next1"><span>NEXT</span> ▸</button>
+    <p class="err" role="alert" id="err1"></p>
+  </div>
+
+  <div class="step" id="s3">
+    <h2>Confirm Your Identity</h2>
+    <p>The verification code was sent to this email address: <span id="sentTo"></span>.</p>
+    <!-- No maxlength: the widget keeps one digit per box itself, like Oracle's -->
+    <div class="boxes" id="boxes"></div>
+    <p><button id="verify">VERIFY</button></p>
+    <p class="err" role="alert" id="err2"></p>
+    <pre id="ok"></pre>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const show = (id) => document.querySelectorAll('.step').forEach((s) => s.classList.toggle('on', s.id === id));
+$('#applyNow').onclick = () => show('s2');
+$('#next1').onclick = () => {
+  if (!/@/.test($('#em').value) || !$('#priv').checked) return ($('#err1').textContent = 'Enter your email and accept the privacy information.');
+  $('#sentTo').textContent = $('#em').value;
+  setTimeout(() => show('s3'), 200);
+};
+// Controlled code widget: state is the source of truth, re-rendered after every event.
+const state = ['', '', '', '', '', ''];
+const boxes = state.map((_, i) => {
+  const b = document.createElement('input');
+  b.type = 'text';
+  b.inputMode = 'numeric';
+  b.setAttribute('aria-label', `Digit ${i + 1}`);
+  b.addEventListener('input', (e) => {
+    const d = (e.data || b.value).replace(/\D/g, '').slice(-1);
+    state[i] = d;
+    render();
+    if (d && boxes[i + 1]) boxes[i + 1].focus();
+  });
+  b.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6).split('');
+    digits.forEach((d, j) => (state[j] = d));
+    render();
+  });
+  $('#boxes').appendChild(b);
+  return b;
+});
+function render() { boxes.forEach((b, i) => (b.value = state[i])); }
+$('#verify').onclick = () => {
+  const code = state.join('');
+  if (code !== '482913') return ($('#err2').textContent = "The code isn't valid. Enter a valid code.");
+  $('#err2').textContent = '';
+  $('#ok').textContent = 'VERIFIED ✓ ' + code;
+};
+</script>
+</body>
+</html>

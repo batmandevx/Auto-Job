@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>My Information – Workday-style test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 700px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 16px; } input { padding: 8px; width: 100%; box-sizing: border-box; }
+    .prompt { position: relative; } .pop { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ccc; z-index: 3; }
+    [data-automation-id="promptOption"] { padding: 8px; cursor: pointer; } .chip { display: inline-block; background: #eee; padding: 2px 8px; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div data-automation-id="formField-source">
+    <label id="src-l">How Did You Hear About Us?<abbr>*</abbr></label>
+    <div class="prompt" data-automation-id="multiselectInputContainer" id="srcBox">
+      <div class="chips"></div>
+      <input type="text" data-automation-id="searchBox" placeholder="Search" role="combobox" aria-expanded="false" aria-labelledby="src-l" autocomplete="off" />
+    </div>
+  </div>
+  <div><label for="code">Country Phone Code *</label><input id="code" role="combobox" readonly value="India (+91)" /></div>
+  <div><label for="ph">Phone Number *</label><input id="ph" type="text" /></div>
+  <div><label for="ext">Phone Extension</label><input id="ext" type="text" /></div>
+  <script>
+    // Two-level prompt: categories open a second list; only a leaf is a real choice.
+    const TREE = { 'Campus Recruiting': ['Career Fair'], 'Contact By U.S. Bank Recruiter': ['Email'], 'Internal': ['Employee'], 'Job Boards': ['absolwent.pl', 'Career Builder', 'Glassdoor', 'Indeed', 'LinkedIn', 'Naukri', 'Other'], 'Referral': ['Employee Referral'], 'Social Network': ['Facebook', 'LinkedIn'] };
+    const box = document.getElementById('srcBox');
+    const input = box.querySelector('input');
+    let pop = null;
+    const show = (items, level) => {
+      pop?.remove();
+      pop = document.createElement('div'); pop.className = 'pop'; pop.setAttribute('role', 'listbox');
+      pop.innerHTML = items.map((t) => `<div data-automation-id="promptOption" role="option">${t}${level === 0 && TREE[t] ? ' ›' : ''}</div>`).join('');
+      box.appendChild(pop); input.setAttribute('aria-expanded', 'true');
+      pop.onclick = (e) => {
+        const t = e.target.textContent.replace(' ›', '');
+        if (level === 0 && TREE[t]) return setTimeout(() => show(TREE[t], 1), 120);
+        box.querySelector('.chips').innerHTML = `<div class="chip" data-automation-id="selectedItem">${t}</div>`;
+        pop.remove(); pop = null; input.setAttribute('aria-expanded', 'false');
+      };
+    };
+    input.addEventListener('click', () => show(Object.keys(TREE), 0));
+    input.addEventListener('focus', () => !pop && show(Object.keys(TREE), 0));
+    input.addEventListener('input', () => { const q = input.value.toLowerCase(); show(Object.keys(TREE).filter((t) => t.toLowerCase().includes(q)), 0); });
+    window.report = () => ({ source: box.querySelector('[data-automation-id="selectedItem"]')?.textContent || '', phone: document.getElementById('ph').value, ext: document.getElementById('ext').value });
+  </script>
+</body>
+</html>

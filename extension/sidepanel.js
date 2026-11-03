@@ -1,0 +1,1534 @@
+const $ = (s) => document.querySelector(s);
+const state = { job: null, resume: null, cover: null, queue: [], queueIdx: -1, boardJobs: [], log: [], running: false };
+let SERVER = 'http://localhost:8787';
+const MAX_PAGES = 15;
+
+const ANSWER_LABELS = {
+  workAuthorization: 'Work authorization',
+  needsSponsorship: 'Need visa sponsorship?',
+  willingToRelocate: 'Willing to relocate? (Yes / No / Depends)',
+  noticePeriod: 'Notice period / availability (e.g. "Immediate", "30 days")',
+  earliestStartDate: 'Earliest start date',
+  yearsOfExperience: 'Years of experience (e.g. "1.5 years incl. internships")',
+  currentlyEmployed: 'Currently employed? (e.g. "No, last internship ended Jul 2026")',
+  currentSalary: 'Current salary / CTC',
+  expectedSalary: 'Expected salary / CTC (e.g. "₹18 LPA")',
+  currentLocation: 'Current location (City, State, Country)',
+  gender: 'Gender (EEO)',
+  race: 'Race / ethnicity (EEO)',
+  veteranStatus: 'Veteran status (EEO)',
+  disabilityStatus: 'Disability status (EEO)',
+  howDidYouHear: 'How did you hear about us?',
+  jobTypes: 'Job types (full-time / internship)',
+  workMode: 'Work mode (onsite / hybrid / remote)',
+  targetRoles: 'Target roles (also the default Job board filter)',
+  governmentEmployee: 'Government employee (you or family)?',
+  extra: 'Anything else the AI should know',
+};
+const PERSONAL_LABELS = {
+  dateOfBirth: 'Date of birth (YYYY-MM-DD)',
+  gender: 'Gender',
+  nationality: 'Nationality',
+  fatherName: "Father's / guardian's name",
+  motherName: "Mother's name",
+  addressLine1: 'Address line 1',
+  addressLine2: 'Address line 2',
+  city: 'City',
+  state: 'State',
+  postalCode: 'PIN / postal code',
+  country: 'Country',
+  graduationYear: 'Graduation year',
+  graduationDate: 'Graduation month (e.g. May 2027)',
+  placeOfBirth: 'Place of birth',
+  languages: 'Languages you speak',
+  pronouns: 'Pronouns',
+  maritalStatus: 'Marital status',
+};
+
+// ---------- helpers ----------
+function toast(msg, bad = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = `show${bad ? ' bad' : ''}`;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.className = ''), bad ? 7000 : 2500);
+}
+
+// Every request has a time limit, so a slow AI or network shows an error instead of an endless spinner.
+const API_TIMEOUTS = [[/^\/api\/profile\/import/, 300000], [/^\/api\/(tailor|cover-letter)/, 180000], [/^\/api\/otp/, 200000], [/^\/api\/(email|answer)/, 100000], [/^\/api\/hackathons/, 90000]];
+async function api(path, opts = {}) {
+  const ms = API_TIMEOUTS.find(([re]) => re.test(path))?.[1] || 30000;
+  const res = await fetch(SERVER + path, {
+    ...opts,
+    signal: AbortSignal.timeout(ms),
+    headers: opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+    body: opts.body instanceof FormData ? opts.body : opts.body && JSON.stringify(opts.body),
+  }).catch((e) => {
+    if (e.name === 'TimeoutError') throw new Error(`The server took over ${Math.round(ms / 1000)}s on this step. Try again, or check the server window.`);
+    throw new Error('Server offline. Run "npm start" in the server folder.');
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+  return data;
+}
+
+function busy(btn, fn) {
+  return async (...a) => {
+    btn.disabled = true;
+    btn.classList.add('loading');
+    try {
+      return await fn(...a);
+    } catch (e) {
+      toast(e.message, true);
+      progress(e.message, 'bad');
+      stepError();
+      throw e;
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    }
+  };
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// Links and images from job boards / APIs: only plain http(s) URLs get into the panel.
+const safeUrl = (u) => (/^https?:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u) : '#');
+const safeImg = (u) => (/^https:\/\/[^\s"'()<>]+$/i.test(String(u || '')) ? String(u) : '');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Stepper: job → resume → fill → review. Earlier steps turn "done", the given one "active".
+const STEPS = ['job', 'resume', 'fill', 'review'];
+function setStep(name, done = false) {
+  const at = STEPS.indexOf(name);
+  document.querySelectorAll('#stepper li').forEach((li, i) => {
+    li.classList.remove('active', 'error');
+    li.classList.toggle('done', i < at || (i === at && done));
+    if (i === at && !done) li.classList.add('active');
+  });
+}
+const resetSteps = () => document.querySelectorAll('#stepper li').forEach((li) => li.classList.remove('active', 'done', 'error'));
+const stepError = () => document.querySelector('#stepper li.active')?.classList.replace('active', 'error');
+
+function scoreRing(score) {
+  const pct = Math.max(0, Math.min(100, Number(score) || 0));
+  return `<div class="ring"><svg viewBox="0 0 64 64"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs>
+    <circle class="bg" cx="32" cy="32" r="26"/><circle class="fg" cx="32" cy="32" r="26" data-pct="${pct}"/></svg><div class="val">${score ?? '–'}</div></div>`;
+}
+// Animate rings after they are in the DOM.
+const animateRings = () => requestAnimationFrame(() => document.querySelectorAll('.ring .fg').forEach((c) => (c.style.strokeDashoffset = 163.4 * (1 - c.dataset.pct / 100))));
+// Keyword coverage: what the job asks for vs. what your resume now shows.
+function keywordBlock(k) {
+  if (!k?.total) return '';
+  const gaps = k.gapFilled || [];
+  const pct = Math.round(((k.covered.length + gaps.length) / k.total) * 100);
+  return `<div class="kw">
+    <div class="row between" style="margin:8px 0 4px"><b>Job keywords in your resume</b><span class="kw-num">${k.covered.length + gaps.length}/${k.total} · ${pct}%</span></div>
+    <div class="meter"><i style="--w:${pct}%"></i></div>
+    <div class="chips">${k.covered.map((x, i) => `<span class="chip ok" style="animation-delay:${i * 25}ms">✓ ${esc(x)}</span>`).join('')}</div>
+    ${gaps.length ? `<div class="hint" style="margin-top:8px">On your “Familiar with / learning” line (be ready to talk about these):</div>
+    <div class="chips">${gaps.map((x, i) => `<button class="chip learn" data-skill="${esc(x)}" title="Tap if you've really used it: moves it into your skills" style="animation-delay:${i * 25}ms">◐ ${esc(x)}</button>`).join('')}</div>` : ''}
+    ${k.missing.length ? `<div class="hint" style="margin-top:8px">Not in your profile, so not added. Tap one you really have:</div>
+    <div class="chips">${k.missing.map((x, i) => `<button class="chip miss" data-skill="${esc(x)}" style="animation-delay:${i * 25}ms">+ ${esc(x)}</button>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+const docLink = (b64, name, label) => `<a class="doc-link" href="${b64ToBlobUrl(b64, 'application/pdf')}" target="_blank">📄 ${esc(label || name)}</a>`;
+const b64ToBlobUrl = (b64, type) => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type }));
+
+function progress(msg, cls = 'on') {
+  const p = $('#progress');
+  p.querySelectorAll('.step.on').forEach((s) => s.classList.remove('on'));
+  p.insertAdjacentHTML('beforeend', `<div class="step ${cls}">${esc(msg)}</div>`);
+  while (p.children.length > 8) p.firstChild.remove();
+}
+
+// The page you're working on: the active tab of your last-used browser window. (In window mode, e.g. in Arc,
+// "current window" would be the Auto Job window itself.)
+async function browserTab() {
+  const win = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+  const [tab] = await chrome.tabs.query(win ? { active: true, windowId: win.id } : { active: true, lastFocusedWindow: true });
+  if (tab && /^https?:/.test(tab.url || '')) return tab;
+  // Opened as a tab (e.g. Arc Split View) or window: the "active tab" is Auto Job itself,
+  // so use the last real web page you were on.
+  const last = await chrome.runtime.sendMessage({ type: 'last-web-tab' }).catch(() => null);
+  if (last?.id) {
+    const t = await chrome.tabs.get(last.id).catch(() => null);
+    if (t && /^https?:/.test(t.url || '')) return t;
+  }
+  // Fallback: the most recently used web tab in any window.
+  const all = (await chrome.tabs.query({})).filter((t) => /^https?:/.test(t.url || ''));
+  return all.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || tab;
+}
+
+async function activeTab() {
+  const tab = await browserTab();
+  if (!tab || !/^https?:/.test(tab.url || '')) throw new Error('Open a job page (http/https) in this tab first');
+  return tab;
+}
+
+async function inject(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['content.js'] }).catch(() => {});
+}
+
+// Run a __jobfill method in every frame (job forms are often inside iframes, e.g. Greenhouse embeds).
+async function callAll(tabId, method, ...args) {
+  await inject(tabId);
+  const res = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: (m, a) => window.__jobfill?.[m]?.(...a),
+    args: [method, args],
+  });
+  return res.filter((r) => r.result != null);
+}
+
+async function callFrame(tabId, frameId, method, ...args) {
+  const [r] = await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [frameId] },
+    func: (m, a) => window.__jobfill?.[m]?.(...a),
+    args: [method, args],
+  });
+  return r?.result;
+}
+
+function waitForLoad(tabId, timeout = 15000) {
+  return new Promise((resolve) => {
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      setTimeout(resolve, 1500); // let SPAs render after "complete"
+    };
+    const listener = (id, info) => id === tabId && info.status === 'complete' && done();
+    const timer = setTimeout(done, timeout);
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+// After clicking Next: wait until the form step actually changes (SPA re-render or full navigation).
+async function waitForNewStep(tabId, before, timeout = 12000) {
+  const end = Date.now() + timeout;
+  await sleep(800);
+  while (Date.now() < end) {
+    try {
+      const keys = (await callAll(tabId, 'pageKey')).map((r) => r.result).join('||');
+      if (keys && keys !== before) {
+        await sleep(900); // let the new step finish rendering
+        return true;
+      }
+    } catch {
+      // mid-navigation: the frame is gone for a moment
+    }
+    await sleep(500);
+  }
+  return false;
+}
+const pageKeys = async (tabId) => (await callAll(tabId, 'pageKey')).map((r) => r.result).join('||');
+
+// ---------- 1. job ----------
+async function readJob() {
+  const tab = await activeTab();
+  const frames = await callAll(tab.id, 'extractJob');
+  const best = frames.map((f) => f.result).sort((a, b) => (b.source === 'json-ld') - (a.source === 'json-ld') || b.description.length - a.description.length)[0];
+  if (!best) throw new Error('Could not read this page');
+  state.job = best;
+  $('#jobTitle').value = best.title;
+  $('#jobCompany').value = best.company;
+  $('#jobLocation').value = best.location || '';
+  $('#jobDesc').value = best.description;
+  $('#jobMeta').textContent = [best.company, best.title].filter(Boolean).join(' · ');
+  showEmails(frames.flatMap((f) => f.result.emails || []).filter((e, i, a) => a.indexOf(e) === i));
+  setStep('job', true);
+  return best;
+}
+
+const currentJob = () => ({
+  title: $('#jobTitle').value.trim(),
+  company: $('#jobCompany').value.trim(),
+  location: $('#jobLocation').value.trim(),
+  description: $('#jobDesc').value.trim(),
+  url: state.job?.url,
+});
+const jobKey = () => `${currentJob().company}|${currentJob().title}|${currentJob().description.length}`;
+
+// ---------- 2. resume & cover letter ----------
+async function tailor() {
+  if (currentJob().description.length < 80) await readJob();
+  progress('Tailoring your resume to this job…');
+  setStep('resume');
+  const out = await api('/api/tailor', { method: 'POST', body: { ...currentJob(), fillGaps: $('#fillGaps').checked } });
+  state.resume = { ...out, key: jobKey() };
+  $('#tailorOut').innerHTML = `
+    <div class="score-card">${scoreRing(out.matchScore)}<div><b>Match with this job</b><div class="hint">one-page resume, built from your real experience</div>${docLink(out.pdfBase64, out.filename, 'Open tailored resume')}</div></div>
+    ${keywordBlock(out.keywords)}
+    <details><summary class="hint">What changed (${out.changes.length})</summary><ul>${out.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></details>`;
+  animateRings();
+  $('#resumeMeta').textContent = out.matchScore != null ? `${out.matchScore}% match` : 'ready';
+  return out;
+}
+const ensureResume = async () => (state.resume?.key === jobKey() ? state.resume : tailor());
+
+async function coverLetter() {
+  if (currentJob().description.length < 80) await readJob();
+  progress('Writing a cover letter for this job…');
+  const keywords = state.resume?.key === jobKey() ? state.resume.keywords?.covered : undefined;
+  const out = await api('/api/cover-letter', { method: 'POST', body: { ...currentJob(), keywords } });
+  state.cover = { ...out, key: jobKey() };
+  $('#coverOut').innerHTML = `<div class="row between"><b>Cover letter</b>${docLink(out.pdfBase64, out.filename, 'Open PDF')}</div>
+    ${out.keywordsUsed?.length ? `<div class="hint">Uses ${out.keywordsUsed.length} job keywords: ${out.keywordsUsed.map(esc).join(', ')}</div>` : ''}
+    <div class="letter">${esc(out.text)}</div>`;
+  return out;
+}
+const ensureCover = async () => (state.cover?.key === jobKey() ? state.cover : coverLetter());
+
+// ---------- 3. fill ----------
+const COVER_RE = /cover\s*letter|letter\s*of\s*(motivation|interest)|motivation\s*letter/i;
+const OTP_RE = /\botp\b|one[-\s]?time\s*(pass|code)|verification\s*code|security\s*code|passcode|confirmation\s*code|enter (the |your )?code|access\s*code|email\s*code/i;
+const ATS_HOSTS = /greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|myworkday\.com|workable\.com|smartrecruiters\.com|icims\.com|jobvite\.com|successfactors\.|taleo\.net|bamboohr\.com|recruitee\.com|naukri\.com|instahyre\.com|wellfound\.com/i;
+const siteHint = (url) => `${currentJob().company} ${new URL(url).hostname.replace(/^www\./, '')}`;
+
+// Only follow emailed links that belong to the job site, the company, or a known applicant-tracking system.
+function trustedLink(link, pageUrl) {
+  try {
+    const host = new URL(link).hostname;
+    const page = new URL(pageUrl).hostname;
+    const base = (h) => h.split('.').slice(-2).join('.');
+    const company = currentJob().company.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return base(host) === base(page) || ATS_HOSTS.test(host) || (company.length > 2 && host.replace(/[^a-z0-9]/g, '').includes(company));
+  } catch {
+    return false;
+  }
+}
+
+// Wait for a code from Gmail and type it in.
+async function fillCodes(tab, otpFields) {
+  progress('Waiting for the verification code in Gmail (up to 2 min)…');
+  const hit = await api(`/api/otp?since=${state.startedAt}&hint=${encodeURIComponent(siteHint(tab.url))}&want=code&wait=120`).catch((e) => ({ error: e.message }));
+  const rows = [];
+  let typed = false;
+  // The split-box widget first; a plain "or paste the code" box only if that didn't take.
+  const ordered = [...otpFields].sort((a, b) => (b.type === 'otp-split') - (a.type === 'otp-split'));
+  for (const f of ordered) {
+    if (typed) break;
+    let tag;
+    if (hit?.code) {
+      const [frameId, id] = f.id.split(/:(.*)/);
+      const r = (await callFrame(tab.id, Number(frameId), 'fill', { [id]: hit.code }, [])) || {};
+      typed = r[id] === 'filled';
+      tag = typed
+        ? `<span class="tag done">typed ${esc(hit.code)}</span> <span class="src">from “${esc(hit.subject.slice(0, 50))}”</span>`
+        : `<span class="tag err">${esc(r[id] || 'could not type the code')}</span>`;
+    } else tag = `<span class="tag review">${esc(hit?.error || 'no code email arrived yet')}</span>`;
+    rows.push(`<div class="item ${typed ? '' : 'bad'}"><div class="q">🔑 ${esc(f.label.slice(0, 80))}</div><div class="v">${tag}</div></div>`);
+  }
+  // Whatever happened, show the code big with a Copy button so you can type it in one go.
+  if (hit?.code) {
+    rows.push(`<div class="code-box ${typed ? '' : 'need'}"><span class="code-digits">${esc(hit.code)}</span><button class="btn ghost sm" data-copy="${esc(hit.code)}">Copy</button><span class="hint">${typed ? 'Typed into the page.' : 'Type or paste this into the code boxes, then press Continue.'}</span></div>`);
+    if (!typed) progress(`Couldn't type the code: it's ${hit.code}. Type it, then press Continue`, 'bad');
+  }
+  return { rows, ok: typed };
+}
+function fileKind(f, fileCount) {
+  const l = `${f.label} ${f.name}`.toLowerCase();
+  if (COVER_RE.test(l)) return 'cover';
+  if (/signature/.test(l)) return 'signature';
+  // Your saved documents (Profile → Documents).
+  if (/marks?\s*sheet|mark\s*list|grade\s*sheet|report\s*card/.test(l) && /\b(10th|tenth|ssc|class\s*(x|10)\b|matric|secondary)/.test(l) && !/senior|higher/.test(l)) return 'marksheet10';
+  if (/marks?\s*sheet|mark\s*list|grade\s*sheet/.test(l) && /\b(12th|twelfth|hsc|class\s*(xii|12)\b|intermediate|senior secondary|higher secondary|puc)/.test(l)) return 'marksheet12';
+  if (/photo|picture|headshot|passport\s*-?\s*size|profile\s*image|your\s*image/.test(l) && !/photo\s*id|id\s*-?\s*proof|identity/.test(l)) return 'photo';
+  if (/\bpan\b|pan\s*card|permanent account/.test(l) && !/aadhaa?r|address/.test(l)) return 'panCard';
+  if (/id\s*-?\s*proof|identity|aadhaa?r|passport\b(?!\s*-?\s*size)|government id|photo id/.test(l)) return 'idProof';
+  if (/address\s*proof|proof of address|residence proof|utility bill/.test(l)) return 'addressProof';
+  if (/degree\s*certificate|provisional|graduation certificate|convocation/.test(l)) return 'degree';
+  if (/transcript|consolidated mark|semester mark|grade card|cgpa (proof|certificate)/.test(l)) return 'transcript';
+  if (/photo|picture|headshot|passport\s*size|profile\s*image|your\s*image/.test(l)) return 'photo';
+  if (/resume|résumé|\bcv\b|curriculum/.test(l)) return 'resume';
+  if (/transcript|marksheet|certificate|id\s*proof|aadha?ar|\bpan\b|passport|portfolio|work\s*sample|other/.test(l)) return 'other';
+  return fileCount === 1 && !/image/.test(f.accept) ? 'resume' : 'other';
+}
+
+async function uploadFor(kind) {
+  if (kind === 'resume') {
+    const r = await ensureResume();
+    return { base64: r.pdfBase64, filename: r.filename, mime: 'application/pdf' };
+  }
+  if (kind === 'cover') {
+    if (!$('#autoCover').checked) return null;
+    const c = await ensureCover();
+    return { base64: c.pdfBase64, filename: c.filename, mime: 'application/pdf' };
+  }
+  if (['photo', 'signature', 'marksheet10', 'marksheet12', 'idProof', 'addressProof', 'panCard', 'degree', 'transcript'].includes(kind)) return api(`/api/documents/${kind}`).catch(() => null);
+  return null;
+}
+
+// Sites that open an editor box per entry (fields + Cancel / "Add Language"): onEditor fills it and presses its button.
+async function addSectionEntries(tab, onEditor) {
+  const p = state.profile || {};
+  const languages = String(p.personal?.languages || '').split(/\s*[,;/]\s*|\s+and\s+/i).filter(Boolean);
+  const targets = { experience: Math.min(3, p.experience?.length || 0), education: Math.min(1, p.education?.length || 0), languages: Math.min(4, languages.length) };
+  for (const [kind, want] of Object.entries(targets)) {
+    for (let k = 0; k < want; k++) {
+      const have = (await callAll(tab.id, 'sectionEntries', kind)).reduce((n, f) => n + (f.result || 0), 0);
+      if (have >= want) break;
+      const frames = await callAll(tab.id, 'addEntry', kind);
+      const hit = frames.find((f) => f.result?.ok);
+      if (!hit) break;
+      progress(`Added a ${kind} entry (“${hit.result.label}”)`);
+      if (hit.result.editor && onEditor) await onEditor(kind, have + 1, hit.frameId);
+    }
+  }
+}
+
+// Upload the documents a page asks for (resume, cover letter, ID…), adding a result row for each.
+async function uploadFiles(tab, files, rows, missingRequired) {
+  for (const f of files) {
+    const kind = fileKind(f, files.length);
+    const doc = await uploadFor(kind).catch((e) => ({ error: e.message }));
+    let tag;
+    if (doc?.base64) {
+      const r = await callFrame(tab.id, f.frameId, 'uploadFile', f.id, doc.base64, doc.filename, doc.mime);
+      tag = r?.ok ? `<span class="tag done">uploaded</span> ${esc(doc.filename)}` : `<span class="tag err">${esc(r?.reason || 'upload failed')}</span>`;
+    } else {
+      tag = `<span class="tag review">${kind === 'other' ? 'upload it yourself' : doc?.error ? esc(doc.error) : `add your ${DOC_NAMES[kind] || kind} in Profile → Documents`}</span>`;
+      if (f.required) missingRequired.push(f.label);
+    }
+    rows.push(`<div class="item ${doc?.base64 ? '' : f.required ? 'bad' : 'warn'}" style="--i:${rows.length}"><div class="q">📎 ${esc(f.label.slice(0, 100))}${f.required ? ' *' : ''} <span class="src">${kind}</span></div><div class="v">${tag}</div></div>`);
+  }
+}
+
+// Fill everything visible on the current step. Repeats when answers reveal follow-up questions.
+async function fillPage(pageNo = 1) {
+  const tab = await activeTab();
+  const attempted = new Set();
+  const rows = [];
+  const failed = [];
+  let missingRequired = [];
+  let last = null;
+
+  const filledValues = {}; // frameId -> { fieldId: value } we set, re-checked at the end
+  const labelOf = {};
+  let entryHint = null; // { section, entry } while filling one editor box ("Languages", entry 2)
+  const fillRounds = async () => {
+  for (let round = 0; round < 4; round++) {
+    await callAll(tab.id, 'waitStable').catch(() => {}); // fields that load in stages
+    const scans = await callAll(tab.id, 'scan');
+    last = scans;
+    let fields = [];
+    const files = [];
+    for (const { frameId, result } of scans) {
+      for (const f of result.fields) {
+        const key = `${frameId}:${f.id}`;
+        if (attempted.has(key)) continue;
+        if (f.type === 'file') {
+          if (!f.filled) files.push({ ...f, key, frameId });
+          continue;
+        }
+        if (f.type === 'captcha') continue; // you type CAPTCHAs; never guessed
+        if ($('#onlyEmpty').checked && f.filled) continue;
+        fields.push({ ...f, id: key, label: f.label.slice(0, 300), ...(entryHint && f.inEditor && !f.entry ? entryHint : {}) });
+      }
+    }
+    const otpFields = fields.filter((f) => f.type === 'otp-split' || (OTP_RE.test(f.label) && ['text', 'tel', 'number', 'combobox'].includes(f.type)));
+    fields = fields.filter((f) => !otpFields.includes(f));
+    if (!fields.length && !files.length && !otpFields.length) break;
+
+    // Uploads first: some sites (PyjamaHR…) read the resume and rewrite the form, wiping answers typed before it.
+    if (files.length) {
+      progress(`Page ${pageNo}: uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
+      files.forEach((f) => attempted.add(f.key));
+      await uploadFiles(tab, files, rows, missingRequired);
+      await callAll(tab.id, 'waitStable').catch(() => {});
+      await sleep(800);
+      continue; // rescan: the upload may have changed the fields
+    }
+    progress(`Page ${pageNo}: filling ${fields.length} field${fields.length === 1 ? '' : 's'}${files.length ? ` + ${files.length} upload${files.length === 1 ? '' : 's'}` : ''}…`);
+    fields.forEach((f) => { attempted.add(f.id); labelOf[f.id] = f.label; });
+    otpFields.forEach((f) => attempted.add(f.id));
+
+    const wantsCoverText = $('#autoCover').checked && fields.some((f) => COVER_RE.test(f.label) && ['textarea', 'text'].includes(f.type));
+    const cover = wantsCoverText ? await ensureCover() : state.cover?.key === jobKey() ? state.cover : null;
+
+    const { values, needsReview, source, aiError } = fields.length
+      ? await api('/api/answer', { method: 'POST', body: { fields, job: currentJob(), coverLetter: cover?.text } })
+      : { values: {}, needsReview: [], source: {} };
+    if (aiError) progress(`AI unavailable (${aiError.slice(0, 60)}): filled what your profile knows, please fill the rest`, 'bad');
+
+    const results = {};
+    const byFrame = {};
+    for (const [key, v] of Object.entries(values)) {
+      const [frameId, id] = key.split(/:(.*)/);
+      (byFrame[frameId] ||= {})[id] = v;
+    }
+    for (const [frameId, vals] of Object.entries(byFrame)) {
+      const review = needsReview.filter((k) => k.startsWith(`${frameId}:`)).map((k) => k.split(/:(.*)/)[1]);
+      const r = (await callFrame(tab.id, Number(frameId), 'fill', vals, review)) || {};
+      for (const [id, status] of Object.entries(r)) {
+        results[`${frameId}:${id}`] = status;
+        if (status === 'filled') (filledValues[frameId] ||= {})[id] = vals[id];
+      }
+    }
+
+    for (const f of fields) {
+      const v = values[f.id];
+      const status = results[f.id];
+      const empty = v === undefined || v === '' || (Array.isArray(v) && !v.length);
+      if (empty && f.required) missingRequired.push(f.label);
+      if (!empty && status && status !== 'filled') failed.push({ key: f.id, label: f.label, value: Array.isArray(v) ? v.join(', ') : String(v), error: status, required: f.required });
+      const tag =
+        status && status !== 'filled' ? `<span class="tag err">${esc(status)}</span>`
+        : needsReview.includes(f.id) ? '<span class="tag review">check</span>'
+        : !empty ? '<span class="tag done">filled</span>'
+        : `<span class="tag review">${f.required ? 'required: fill it' : 'left empty'}</span>`;
+      const src = source?.[f.id] ? `<span class="src">${{ profile: 'from profile', memory: 'remembered', ai: 'AI', 'cover-letter': 'cover letter' }[source[f.id]] || ''}</span>` : '';
+      const cls = (status && status !== 'filled') || (empty && f.required) ? 'bad' : needsReview.includes(f.id) || empty ? 'warn' : '';
+      rows.push(`<div class="item ${cls}" style="--i:${rows.length}"><div class="q">${esc(f.label.slice(0, 120))}${f.required ? ' *' : ''} ${tag}${src}</div><div class="v">${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v ?? '')}</div></div>`);
+    }
+
+    if (otpFields.length) {
+      const c = await fillCodes(tab, otpFields);
+      rows.push(...c.rows);
+      if (!c.ok) missingRequired.push('verification code');
+    }
+    await sleep(500); // give conditional questions time to appear before re-scanning
+  }
+  };
+
+  // Repeating sections ("Work Experience → Add"): add as many entries as your profile has (3 jobs, 1 degree, your languages).
+  await addSectionEntries(tab, async (kind, n, frameId) => {
+    entryHint = { section: kind[0].toUpperCase() + kind.slice(1), entry: n };
+    await fillRounds();
+    entryHint = null;
+    const saved = await callFrame(tab.id, frameId, 'saveOpenCard').catch(() => null);
+    rows.push(`<div class="item ${saved?.ok ? '' : 'warn'}"><div class="q">➕ ${esc(kind)} #${n} <span class="tag ${saved?.ok ? 'done' : 'review'}">${saved?.ok ? `added, pressed “${esc(saved.button)}”` : 'filled: press its Add / Save button'}</span></div></div>`);
+  });
+  // Link rows ("Work Link [+]", "Link 1/2/3 + Add link"): one box per link — both portfolios, LinkedIn, GitHub.
+  const pl = state.profile?.links || {};
+  const links = [...new Set([pl.portfolio, pl.linkedin, pl.github, ...(pl.other || []).filter((l) => !/leetcode/i.test(l))].filter(Boolean))];
+  if (links.length > 1) await callAll(tab.id, 'addLinkRows', links.length).catch(() => {});
+  await fillRounds();
+
+  // Entry cards the site imported but flags ("Fields to fix: 1"): open each, fill it, press its Save / Add button.
+  for (let c = 0; c < 6; c++) {
+    const hit = (await callAll(tab.id, 'openFixCard').catch(() => [])).find((f) => f.result?.ok);
+    if (!hit) break;
+    progress(`Page ${pageNo}: fixing “${hit.result.label}”…`);
+    await fillRounds();
+    const saved = await callFrame(tab.id, hit.frameId, 'saveOpenCard').catch(() => null);
+    rows.push(`<div class="item ${saved?.ok ? '' : 'warn'}"><div class="q">🧩 ${esc(hit.result.label)} <span class="tag ${saved?.ok ? 'done' : 'review'}">${saved?.ok ? `fixed, pressed “${esc(saved.button)}”` : 'filled: press its Save button'}</span></div></div>`);
+  }
+
+  // Trust but verify, once more at the end: refill anything the site cleared after we filled it.
+  await callAll(tab.id, 'waitStable').catch(() => {});
+  for (const [frameId, vals] of Object.entries(filledValues)) {
+    const lost = (await callFrame(tab.id, Number(frameId), 'lostValues', vals).catch(() => null)) || [];
+    if (!lost.length) continue;
+    const r = (await callFrame(tab.id, Number(frameId), 'fill', Object.fromEntries(lost.map((id) => [id, vals[id]])), [])) || {};
+    for (const id of lost) {
+      const ok = r[id] === 'filled';
+      if (!ok) failed.push({ key: `${frameId}:${id}`, label: labelOf[`${frameId}:${id}`] || id, value: String(vals[id]), error: r[id] || 'cleared by the site', required: false });
+      rows.push(`<div class="item ${ok ? 'warn' : 'bad'}"><div class="q">🔁 ${esc((labelOf[`${frameId}:${id}`] || 'Field').slice(0, 90))}: the site cleared it <span class="tag ${ok ? 'review' : 'err'}">${ok ? 'refilled' : esc(r[id] || 'cleared')}</span></div><div class="v">${esc(String(vals[id]).slice(0, 120))}</div></div>`);
+    }
+  }
+
+  // A CAPTCHA on the page: put your cursor in it and wait for you (the run stops here until you've typed it).
+  const cap = (await callAll(tab.id, 'focusCaptcha').catch(() => [])).find((f) => f.result?.waiting);
+  if (cap) {
+    rows.push(`<div class="item warn"><div class="q">🔤 CAPTCHA <span class="tag review">type it yourself</span></div><div class="v">Your cursor is in the box. Type the characters, then press Fill again (or Submit).</div></div>`);
+    missingRequired.push('CAPTCHA (type the characters yourself)');
+  }
+
+  const info = (last || []).map((s) => s.result);
+  const next = info.map((i) => i.next).find(Boolean) || null;
+  const submit = info.map((i) => i.submit).find(Boolean) || null;
+  const errors = info.flatMap((i) => i.errors || []);
+  const checkEmail = info.some((i) => i.checkEmail);
+  $('#fillMeta').textContent = `page ${pageNo}`;
+  state.log.push(`<div class="page">Page ${pageNo}</div>${rows.join('') || '<p class="hint">Nothing new to fill on this page.</p>'}`);
+  $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+  return { count: rows.length, missingRequired: [...new Set(missingRequired)], failed, next, submit, errors, checkEmail };
+}
+
+// ---------- self-correction ----------
+// Fields the page marks as invalid, across frames, keyed like the rest of the panel ("frameId:fieldId").
+async function collectFieldErrors(tab) {
+  const frames = await callAll(tab.id, 'fieldErrors').catch(() => []);
+  return frames.flatMap(({ frameId, result }) => (result || []).map((e) => ({ ...e, key: `${frameId}:${e.id}`, frameId })));
+}
+
+// Ask for corrected values for the flagged fields (with the site's message and the rejected value) and re-fill them.
+async function repairPage(tab, errs, pageErrors, pageNo) {
+  const scans = await callAll(tab.id, 'scan');
+  const meta = new Map();
+  for (const { frameId, result } of scans) for (const f of result.fields) meta.set(`${frameId}:${f.id}`, { ...f, id: `${frameId}:${f.id}`, label: f.label.slice(0, 300) });
+  let targets = errs.map((e) => meta.get(e.key)).filter((f) => f && f.type !== 'file' && f.type !== 'otp-split');
+  // Only a banner ("Please complete all required fields"): retry the required fields that are still empty.
+  if (!targets.length && pageErrors.length) targets = [...meta.values()].filter((f) => f.required && !f.filled && f.type !== 'file');
+  if (!targets.length) return { fixed: 0, unresolved: errs.map((e) => e.label) };
+  const errors = Object.fromEntries(errs.map((e) => [e.key, { message: e.error, previous: e.value }]));
+  const { values, needsReview } = await api('/api/answer', { method: 'POST', body: { fields: targets, job: currentJob(), errors, pageErrors } });
+  const byFrame = {};
+  for (const [key, v] of Object.entries(values)) {
+    const [frameId, id] = key.split(/:(.*)/);
+    (byFrame[frameId] ||= {})[id] = v;
+  }
+  let fixed = 0;
+  const rows = [];
+  for (const [frameId, vals] of Object.entries(byFrame)) {
+    const review = needsReview.filter((k) => k.startsWith(`${frameId}:`)).map((k) => k.split(/:(.*)/)[1]);
+    const r = (await callFrame(tab.id, Number(frameId), 'fill', vals, review)) || {};
+    for (const [id, status] of Object.entries(r)) {
+      const key = `${frameId}:${id}`;
+      const f = meta.get(key);
+      if (status === 'filled') fixed++;
+      rows.push(`<div class="item ${status === 'filled' ? 'warn' : 'bad'}"><div class="q">🔧 ${esc((f?.label || id).slice(0, 90))} <span class="tag ${status === 'filled' ? 'review' : 'err'}">${status === 'filled' ? 'corrected' : esc(status)}</span></div>
+        <div class="v">${esc(String(values[key]).slice(0, 120))}${errors[key]?.message ? `<span class="src">site said: ${esc(errors[key].message.slice(0, 80))}</span>` : ''}</div></div>`);
+    }
+  }
+  if (rows.length) {
+    state.log.push(`<div class="page">Page ${pageNo} · fixes</div>${rows.join('')}`);
+    $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+  }
+  const unresolved = targets.filter((f) => !values[f.id]).map((f) => f.label);
+  return { fixed, unresolved };
+}
+
+// Fill → Next → fill … until the final page (Submit visible), a page needs you, or Next fails.
+async function runPages() {
+  const tab = await activeTab();
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const r = await fillPage(page);
+    // Values a widget refused ("didn't stick", "no option matches"): ask again with that feedback.
+    if (r.failed.length) {
+      progress(`Page ${page}: ${r.failed.length} field${r.failed.length > 1 ? 's' : ''} didn't take, trying another way`);
+      const fx = await repairPage(tab, r.failed, [], page);
+      const stillBad = r.failed.filter((x) => x.required).length - fx.fixed;
+      if (stillBad > 0) r.missingRequired.push(...r.failed.filter((x) => x.required).map((x) => x.label).slice(0, stillBad));
+    }
+    if (r.checkEmail && !r.next && !r.submit && !r.count) {
+      if (!(await followEmailLink(tab))) return 'needs-input';
+      continue;
+    }
+    if (r.missingRequired.length) {
+      progress(`Page ${page}: needs you: ${r.missingRequired.slice(0, 3).join('; ')}`, 'bad');
+      $('#submitOut').innerHTML = `<p><b>Fill the required fields marked “required” or “upload it yourself”</b>, then press <b>Continue</b>.</p>`;
+      return 'needs-input';
+    }
+    // Final page: a Submit button and no Next. Fix anything flagged before you review.
+    if (!r.next || !$('#autoNext').checked) {
+      const errs = (await collectFieldErrors(tab)).filter((e) => e.value);
+      if (errs.length) await repairPage(tab, errs, [], page).catch(() => {});
+      progress(r.submit ? `Final page: review everything, then press Submit` : `Done filling. Review the page.`);
+      setStep('review');
+      if (r.submit) $('#submit').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      $('#submitOut').innerHTML = r.submit
+        ? `<p><b>Review the highlighted fields</b>, fix anything, then press Submit above (it clicks “${esc(r.submit)}”).</p>`
+        : `<p class="hint">${r.next ? `Click “${esc(r.next)}” yourself or turn on auto-click Next.` : 'No Next or Submit button found on this page.'}</p>`;
+      return r.submit ? 'final' : 'done';
+    }
+    // Fix anything the page already flags before moving on.
+    for (let a = 0; a < 2; a++) {
+      const errs = (await collectFieldErrors(tab)).filter((e) => e.value || /format|valid|select|choose|match|must|between|characters|digits/i.test(e.error));
+      if (!errs.length) break;
+      progress(`Page ${page}: fixing ${errs.length} flagged field${errs.length > 1 ? 's' : ''}`);
+      if (!(await repairPage(tab, errs, [], page)).fixed) break;
+    }
+    await remember(tab.id);
+    const clickNextAndWait = async () => {
+      const before = await pageKeys(tab.id);
+      const t = (await callAll(tab.id, 'nextLabel')).find((f) => f.result);
+      if (!t) return null;
+      progress(`Page ${page}: clicking “${t.result}”`);
+      await callFrame(tab.id, t.frameId, 'clickNext');
+      return waitForNewStep(tab.id, before);
+    };
+    let moved = await clickNextAndWait();
+    if (moved === null) {
+      progress('The Next button disappeared: review the page, then press Continue', 'bad');
+      return 'blocked';
+    }
+    // The site refused the page: read its errors, correct those fields, try again (up to 3 times).
+    for (let attempt = 1; attempt <= 3 && !moved; attempt++) {
+      const errs = await collectFieldErrors(tab);
+      const pageErrs = (await callAll(tab.id, 'errorTexts')).flatMap((f) => f.result);
+      if (!errs.length && !pageErrs.length) break;
+      progress(`Page ${page}: the site found ${errs.length || pageErrs.length} problem${(errs.length || pageErrs.length) > 1 ? 's' : ''}, fixing (attempt ${attempt}/3)`);
+      const fx = await repairPage(tab, errs, pageErrs, page);
+      if (!fx.fixed) break;
+      moved = await clickNextAndWait();
+    }
+    if (!moved) {
+      const errs = (await callAll(tab.id, 'errorTexts')).flatMap((f) => f.result);
+      progress(`The site did not move on${errs.length ? `: ${errs.slice(0, 2).join(' · ')}` : ''}`, 'bad');
+      $('#submitOut').innerHTML = `<p><b>The form stayed on this page.</b> ${errs.length ? `It says: ${errs.map(esc).join(' · ')}` : 'Look for a red error on the page.'} Fix it, then press <b>Continue</b>.</p>`;
+      return 'blocked';
+    }
+  }
+  progress(`Stopped after ${MAX_PAGES} pages`, 'bad');
+  return 'too-many';
+}
+
+// "Check your email to continue": find the verification link in Gmail and open it in this tab.
+async function followEmailLink(tab) {
+  progress('Waiting for the verification email in Gmail (up to 2 min)…');
+  const hit = await api(`/api/otp?since=${state.startedAt}&hint=${encodeURIComponent(siteHint(tab.url))}&want=link&wait=120`).catch((e) => ({ error: e.message }));
+  if (!hit?.link) {
+    progress(hit?.error || 'No verification email arrived. Open it yourself, then press Continue.', 'bad');
+    return false;
+  }
+  if (!trustedLink(hit.link, tab.url)) {
+    $('#submitOut').innerHTML = `<p>Found a verification link from “${esc(hit.from)}”, but it points to ${esc(new URL(hit.link).hostname)}, which isn't this job site. <a href="${esc(hit.link)}" target="_blank">Open it</a> only if you trust it, then press Continue.</p>`;
+    progress('Verification link is on another site: check it yourself', 'bad');
+    return false;
+  }
+  progress(`Opening the verification link from “${hit.subject.slice(0, 40)}”`);
+  await chrome.tabs.update(tab.id, { url: hit.link });
+  await waitForLoad(tab.id);
+  return true;
+}
+
+// Answers are collected page by page, but only saved to memory when you actually submit
+// (i.e. after you reviewed them), so an AI guess on an unreviewed page is never remembered.
+state.pendingMemory = [];
+async function remember(tabId) {
+  const snaps = (await callAll(tabId, 'snapshot').catch(() => [])).flatMap((f) => f.result);
+  state.pendingMemory.push(...snaps);
+}
+async function commitMemory() {
+  const entries = state.pendingMemory;
+  state.pendingMemory = [];
+  if (entries.length) await api('/api/answer-bank', { method: 'POST', body: { entries } }).catch(() => {});
+}
+
+// On a job page, press Apply (several hops on boards: board → countdown page → company site → form) until the form shows.
+async function openApplication(tab) {
+  // Job boards often need several "Apply" hops (board → countdown page → company careers page → form).
+  for (let hop = 0; hop < 4; hop++) {
+    const scans = await callAll(tab.id, 'scan');
+    // Already on the application form? Only when it asks for you (name, email, phone, resume…), not just any inputs.
+    const fields = scans.flatMap((s) => s.result.fields);
+    const asksForYou = fields.filter((f) => f.type === 'file' || /name|e-?mail|phone|mobile|resume|\bcv\b|linkedin|address|password|username/i.test(f.label)).length;
+    if ((asksForYou >= 1 && fields.length >= 2) || fields.length >= 4) break;
+    let clicked = await callFrame(tab.id, 0, 'clickApply');
+    if (!clicked?.ok) {
+      await sleep(3000); // countdown pages ("You can apply in 3…") enable the button after a moment
+      clicked = await callFrame(tab.id, 0, 'clickApply');
+    }
+    if (!clicked?.ok) break;
+    progress(`Clicked “${clicked.label}”${hop ? ` (step ${hop + 1})` : ''}`);
+    // Some boards open the company site in a new tab: follow whichever tab is now in front.
+    await sleep(1500);
+    const now = await activeTab().catch(() => tab);
+    await waitForLoad(now.id, 8000);
+    tab = await activeTab();
+  }
+  return tab;
+}
+
+// ---------- all-in-one ----------
+async function runAll() {
+  let tab = await activeTab();
+  state.log = [];
+  state.startedAt = Date.now() - 2 * 60_000;
+  state.pendingMemory = [];
+  resetSteps();
+  setStep('job');
+  $('#progress').innerHTML = '';
+  progress('Reading the job…');
+  if (!state.job || state.job.url !== tab.url) await readJob();
+
+  tab = await openApplication(tab);
+  await ensureResume();
+  // No form anywhere, but the post gives a recruiter email: apply by email instead.
+  const formFields = (await callAll(tab.id, 'scan')).reduce((n, x) => n + x.result.fields.filter((f) => f.type !== 'file').length, 0);
+  const emails = state.job?.emails || [];
+  document.querySelector('.submit-card').hidden = formFields < 2 && emails.length > 0; // email jobs have no form to submit
+  if (formFields < 2 && emails.length) {
+    progress('This job applies by email: drafting it for you');
+    showEmails(emails);
+    await draftEmail();
+    return 'email';
+  }
+  setStep('fill');
+  return runPages();
+}
+
+// ---------- 4. submit ----------
+async function submit() {
+  const tab = await activeTab();
+  const frames = await callAll(tab.id, 'submitLabel');
+  const target = frames.find((f) => f.result);
+  if (!target) throw new Error('No Submit button on this page. Use Continue to reach the last page.');
+  // Two clicks within 10 s: the first one only arms it.
+  if (!state.submitArmed || Date.now() - state.submitArmed > 10000) {
+    state.submitArmed = Date.now();
+    $('#submit').classList.add('armed');
+    setTimeout(() => $('#submit').classList.remove('armed'), 10000);
+    $('#submitOut').innerHTML = `<p><b>Press Submit again within 10 seconds</b> to click “${esc(target.result)}” and send this application.</p>`;
+    return;
+  }
+  state.submitArmed = 0;
+  $('#submit').classList.remove('armed');
+  await remember(tab.id);
+  await commitMemory();
+  const r = await callFrame(tab.id, target.frameId, 'clickSubmit');
+  if (!r?.ok) throw new Error(r?.reason || 'Could not click submit');
+  const job = currentJob();
+  await api('/api/applications', { method: 'POST', body: { title: job.title, company: job.company, location: job.location, url: state.job?.url || tab.url, status: 'applied', resume: state.resume?.filename, coverLetter: state.cover?.filename } }).catch(() => {});
+  progress(`Submitted: clicked “${r.label}”`);
+  loadTracker();
+  setStep('review', true);
+  toast('Application submitted 🎉');
+  $('#submitOut').innerHTML = `<p><span class="tag done">submitted</span> Clicked “${esc(r.label)}”. Check the page for a confirmation.</p>`;
+  if (state.queueIdx >= 0) setTimeout(() => nextInQueue(), 4000);
+}
+
+// ---------- job board queue ----------
+function visibleJobs() {
+  const q = $('#jobFilter').value.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+  return state.boardJobs.map((j, i) => ({ j, i })).filter(({ j }) => !q.length || q.some((w) => j.title.toLowerCase().includes(w)));
+}
+function trackedBadge(j) {
+  const a = j.url && state.apps?.find((x) => x.url && x.url.split('#')[0] === j.url.split('#')[0]);
+  const m = a && STATUS[a.status];
+  return m ? ` <span class="track-badge" style="--c:${m.c}">${m.label}</span>` : '';
+}
+
+function renderJobs() {
+  saveJobs();
+  const shown = visibleJobs();
+  $('#jobCount').textContent = `${shown.length} shown · ${state.boardJobs.filter((j) => j.selected).length} selected`;
+  $('#jobList').innerHTML =
+    shown.map(({ j, i }, n) => `<label class="job" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/>
+      <span class="job-main">${j.url ? `<a href="${esc(safeUrl(j.url))}" target="_blank">${esc(j.title)}</a>` : `<b>${esc(j.title)}</b>`}${trackedBadge(j)}${j.premium ? ` <span class="badge ${$('#includePremium').checked ? '' : 'warn'}">premium</span>` : ''}
+      <span class="job-meta">${esc([j.meta, j.source].filter(Boolean).join(' · '))}</span></span></label>`).join('') ||
+    '<p class="hint">No jobs found yet.</p>';
+}
+
+// Your job boards. "Scan all" opens each one and merges every posting into one list.
+const DEFAULT_BOARDS = [
+  { name: 'The Job Company', url: 'https://thejobcompany.co.in/' },
+  { name: 'TJC Internships', url: 'https://thejobcompany.co.in/job-category/internships' },
+  { name: "Let's Code", url: 'https://www.lets-code.co.in/jobs/' },
+  { name: 'EngineerHub Internships', url: 'https://www.engineerhub.in/career/internships' },
+  { name: 'EngineerHub Jobs', url: 'https://www.engineerhub.in/career/jobs' },
+  { name: 'Debug with Shubham', url: 'https://debugwithshubham.com/jobs' },
+  { name: 'Crack Off-Campus', url: 'https://www.crackoffcampus.com/jobs' },
+];
+let BOARDS = DEFAULT_BOARDS;
+
+function renderBoards() {
+  $('#boards').innerHTML = BOARDS.map((b, i) => `<span class="board-chip"><button class="board" data-b="${i}" title="${esc(b.url)}">${esc(b.name)}</button>${i >= DEFAULT_BOARDS.length ? `<button class="board-x" data-x="${i}" title="Remove">×</button>` : ''}</span>`).join('');
+}
+const saveBoards = () => chrome.storage.local.set({ boards: BOARDS.slice(DEFAULT_BOARDS.length) });
+
+// The job list survives closing the panel.
+// Not before the saved list has loaded, or an early render would overwrite it with [].
+const saveJobs = () => state.jobsLoaded && chrome.storage.local.set({ boardJobs: state.boardJobs.slice(0, 600) }).catch(() => {});
+
+function mergeJobs(found, source) {
+  const key = (j) => j.url || `${j.board}#${j.card}`;
+  const have = new Set(state.boardJobs.map(key));
+  for (const j of found) if (!have.has(key(j))) state.boardJobs.push({ ...j, source });
+}
+
+async function scanAllBoards() {
+  const tab = await browserTab();
+  for (const [i, b] of BOARDS.entries()) {
+    $('#queueOut').textContent = `Scanning ${i + 1}/${BOARDS.length}: ${b.name}…`;
+    await chrome.tabs.update(tab.id, { url: b.url });
+    await waitForLoad(tab.id);
+    await sleep(1500); // most boards render their list with JavaScript
+    const frames = await callAll(tab.id, 'collectJobLinks').catch(() => []);
+    mergeJobs(frames.flatMap((f) => f.result), b.name);
+    renderJobs();
+  }
+  $('#queueOut').textContent = `Found ${state.boardJobs.length} jobs across ${BOARDS.length} boards. Filter, tick, then Start applying.`;
+}
+
+// Adds this tab's jobs to the list (never wipes what earlier scans found).
+async function scanBoard() {
+  const tab = await activeTab();
+  const frames = await callAll(tab.id, 'collectJobLinks');
+  const before = state.boardJobs.length;
+  const board = BOARDS.find((b) => tab.url.startsWith(b.url.replace(/\/$/, '')));
+  mergeJobs(frames.flatMap((f) => f.result), board?.name || new URL(tab.url).hostname.replace(/^www\./, ''));
+  renderJobs();
+  toast(`Added ${state.boardJobs.length - before} new jobs (${state.boardJobs.length} in your list)`);
+}
+
+async function openBoard() {
+  const url = $('#boardUrl').value.trim();
+  if (!/^https?:\/\//.test(url)) throw new Error('Paste a full link starting with https://');
+  const tab = await browserTab();
+  await chrome.tabs.update(tab.id, { url });
+  await waitForLoad(tab.id);
+  await scanBoard();
+}
+
+async function openJob(i) {
+  const job = state.queue[i];
+  state.queueIdx = i;
+  state.job = state.resume = state.cover = null;
+  ['#fillOut', '#tailorOut', '#coverOut', '#submitOut', '#emailOut'].forEach((s) => ($(s).innerHTML = ''));
+  ['#emailTo', '#emailSubject', '#emailBody'].forEach((s) => ($(s).value = ''));
+  document.querySelector('.submit-card').hidden = false;
+  $('#queueOut').textContent = `Job ${i + 1} of ${state.queue.length}: ${job.title}: opening…`;
+  const tab = await activeTab();
+  if (job.url && safeUrl(job.url) === '#') throw new Error('That job link is not a normal web address');
+  if (job.url) {
+    await chrome.tabs.update(tab.id, { url: job.url });
+    await waitForLoad(tab.id);
+  } else {
+    // A card without a link: reopen its board and click the card.
+    await chrome.tabs.update(tab.id, { url: job.board });
+    await waitForLoad(tab.id);
+    await callFrame(tab.id, 0, 'openCard', job.card);
+    await waitForLoad(tab.id, 6000);
+  }
+  switchTab('apply');
+  await runAll().catch((e) => toast(e.message, true));
+  $('#queueOut').textContent = `Job ${i + 1} of ${state.queue.length}: ${job.title}. Review it on the Apply tab, then Submit or Skip.`;
+}
+
+async function nextInQueue() {
+  if (state.queueIdx + 1 >= state.queue.length) {
+    state.queueIdx = -1;
+    $('#queueOut').textContent = 'Queue finished.';
+    switchTab('queue');
+    return;
+  }
+  await openJob(state.queueIdx + 1);
+}
+
+// ---------- profile ----------
+const inputsFor = (labels, values, group) =>
+  Object.entries(labels)
+    .map(([k, label]) => `<label class="field">${esc(label)}${k === 'extra' ? `<textarea data-g="${group}" data-k="${k}" rows="3">${esc(values?.[k])}</textarea>` : `<input data-g="${group}" data-k="${k}" value="${esc(values?.[k])}"/>`}</label>`)
+    .join('');
+
+function renderProfile(p) {
+  state.profile = p;
+  if (!p) {
+    $('#profileOut').innerHTML = '<p class="hint">No resume imported yet.</p>';
+    return;
+  }
+  const docs = Object.keys(p.documents || {});
+  const initials = (p.name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  $('#profileOut').innerHTML = `
+    <div class="profile-head"><div class="avatar">${esc(initials)}</div><div><b>${esc(p.name)}</b><div class="hint" style="margin:0">${esc(p.email)} · ${esc(p.phone)}</div></div></div>
+    <div class="stats">
+      <div class="stat"><b>${p.experience?.length || 0}</b><span>roles</span></div>
+      <div class="stat"><b>${p.projects?.length || 0}</b><span>projects</span></div>
+      <div class="stat"><b>${(p.skills || []).flatMap((s) => s.items).length}</b><span>skills</span></div>
+    </div>
+    <p class="hint">${p.sourceFiles?.length ? `Merged from ${p.sourceFiles.length} resume file(s)` : ''}${docs.length ? ` · documents: ${docs.map(esc).join(', ')}` : ''}</p>`;
+  $('#personal').innerHTML = inputsFor(PERSONAL_LABELS, p.personal, 'personal');
+  $('#answers').innerHTML = inputsFor(ANSWER_LABELS, p.answers, 'answers');
+  if (!$('#jobFilter').value && p.answers?.targetRoles) {
+    $('#jobFilter').placeholder = 'Filter titles (empty = show all), e.g. engineer, ml, data, sde';
+  }
+  const bank = Object.entries(p.answerBank || {});
+  $('#bank').innerHTML = bank.length
+    ? bank.map(([k, v]) => `<div class="bank"><span>${esc(k)} → <b>${esc(v.value)}</b></span><button data-forget="${esc(k)}">forget</button></div>`).join('')
+    : '<p class="hint">Nothing yet.</p>';
+}
+
+async function importResume() {
+  const files = [...$('#resumeFile').files];
+  if (!files.length) throw new Error('Choose your resume file(s) first');
+  const fd = new FormData();
+  files.forEach((f) => fd.append('resume', f));
+  renderProfile(await api('/api/profile/import', { method: 'POST', body: fd }));
+  toast('Resume imported. Check your details below.');
+}
+
+async function saveProfile() {
+  const p = await api('/api/profile');
+  if (!p) throw new Error('Import your resume first');
+  document.querySelectorAll('[data-g][data-k]').forEach((el) => (p[el.dataset.g][el.dataset.k] = el.value.trim()));
+  renderProfile(await api('/api/profile', { method: 'PUT', body: p }));
+  toast('Saved');
+}
+
+// ---------- tracker ----------
+const STATUS = {
+  saved: { label: 'To apply', c: '#8b8fa3', icon: '☆' },
+  applied: { label: 'Applied', c: '#5b5bf6', icon: '📨' },
+  assessment: { label: 'Assessment', c: '#0ea5e9', icon: '🧪' },
+  interview1: { label: 'Interview 1', c: '#a855f7', icon: '🎙' },
+  interview2: { label: 'Interview 2', c: '#9333ea', icon: '🎙' },
+  interview3: { label: 'Interview 3', c: '#7e22ce', icon: '🎙' },
+  hr: { label: 'HR round', c: '#d97706', icon: '🤝' },
+  offer: { label: 'Offer', c: '#16a34a', icon: '🎉' },
+  accepted: { label: 'Accepted', c: '#0f9d58', icon: '✅' },
+  rejected: { label: 'Rejected', c: '#e0384a', icon: '✖' },
+  withdrawn: { label: 'Withdrawn', c: '#6b7280', icon: '↩' },
+};
+const ACTIVE = ['applied', 'assessment', 'interview1', 'interview2', 'interview3', 'hr'];
+state.apps = [];
+state.trackFilter = 'all';
+
+const ago = (iso) => {
+  const d = (Date.now() - new Date(iso)) / 86400000;
+  return d < 1 ? 'today' : d < 2 ? 'yesterday' : d < 30 ? `${Math.floor(d)} days ago` : new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+async function loadTracker() {
+  const r = await api('/api/applications').catch(() => null);
+  if (!r) return;
+  state.apps = (Array.isArray(r) ? r : r.items || []).filter((a) => a.id); // older servers return a plain list without ids
+  renderTracker();
+  renderJobs();
+}
+
+function renderTracker() {
+  const apps = state.apps;
+  const count = (f) => apps.filter(f).length;
+  const groups = [
+    { k: 'saved', label: 'To apply', n: count((a) => a.status === 'saved'), c: STATUS.saved.c },
+    { k: 'active', label: 'In process', n: count((a) => ACTIVE.includes(a.status)), c: STATUS.applied.c },
+    { k: 'won', label: 'Offers', n: count((a) => ['offer', 'accepted'].includes(a.status)), c: STATUS.offer.c },
+    { k: 'rejected', label: 'Rejected', n: count((a) => a.status === 'rejected'), c: STATUS.rejected.c },
+  ];
+  $('#trackCount').textContent = count((a) => a.status === 'saved' || ACTIVE.includes(a.status)) || '';
+  $('#trackStats').innerHTML = groups.map((g) => `<div class="stat" data-g="${g.k}" style="--c:${g.c}"><b>${g.n}</b><span>${g.label}</span></div>`).join('');
+  const total = apps.length || 1;
+  $('#trackFunnel').innerHTML = Object.entries(STATUS)
+    .map(([k, m]) => [k, m, count((a) => a.status === k)])
+    .filter(([, , n]) => n)
+    .map(([k, m, n]) => `<i title="${m.label}: ${n}" style="--c:${m.c};--w:${(n / total) * 100}%"></i>`)
+    .join('');
+  const filters = [['all', 'All', 'var(--accent)'], ['saved', 'To apply', STATUS.saved.c], ['applied', 'Applied', STATUS.applied.c], ['assessment', 'Assessment', STATUS.assessment.c], ['interviews', 'Interviews', STATUS.interview1.c], ['won', 'Offers', STATUS.offer.c], ['rejected', 'Rejected', STATUS.rejected.c]];
+  $('#trackFilter').innerHTML = filters
+    .map(([k, l, c]) => `<button class="sf ${state.trackFilter === k ? 'on' : ''}" data-f="${k}" style="--c:${c}">${l}</button>`)
+    .join('');
+  const q = $('#trackSearch').value.toLowerCase().trim();
+  const match = (a) =>
+    (state.trackFilter === 'all' || a.status === state.trackFilter || (state.trackFilter === 'active' && ACTIVE.includes(a.status)) || (state.trackFilter === 'won' && ['offer', 'accepted'].includes(a.status)) || (state.trackFilter === 'interviews' && ['interview1', 'interview2', 'interview3', 'hr'].includes(a.status))) &&
+    (!q || `${a.title} ${a.company}`.toLowerCase().includes(q));
+  const list = apps.filter(match);
+  $('#trackList').innerHTML = list.length
+    ? list
+        .map((a, i) => {
+          const m = STATUS[a.status] || STATUS.applied;
+          const tl = (a.history || []).map((h, j) => `${j ? '<span class="ln"></span>' : ''}<span class="dot" style="--c:${(STATUS[h.status] || m).c}" title="${(STATUS[h.status] || m).label} · ${ago(h.at)}"></span>`).join('');
+          return `<div class="app" data-id="${a.id}" style="--c:${m.c};--i:${Math.min(i, 20)}">
+            <div class="app-top"><div><div class="app-title">${esc(a.title || 'Untitled role')}</div>
+              <div class="app-sub">${esc([a.company, a.location].filter(Boolean).join(' · '))}${a.via === 'email' ? ' · via email' : ''} · ${a.status === 'saved' ? 'saved' : 'applied'} ${ago(a.appliedAt || a.createdAt)}</div></div>
+              <select class="status-select" data-status="${a.id}" style="--c:${m.c}">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === a.status ? 'selected' : ''}>${s.icon} ${s.label}</option>`).join('')}</select></div>
+            <div class="timeline">${tl}<span class="tl">${m.label}${a.history?.length ? ` · ${ago(a.history.at(-1).at)}` : ''}</span></div>
+            <textarea class="app-notes" data-notes="${a.id}" rows="1" placeholder="Add a note (recruiter name, test date, link…)">${esc(a.notes || '')}</textarea>
+            <div class="app-actions">${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}<button class="del" data-del="${a.id}">Delete</button></div>
+          </div>`;
+        })
+        .join('')
+    : `<div class="empty"><span class="big">🗂</span>${apps.length ? 'Nothing matches this filter.' : 'No applications yet. Submit one, or tick jobs on the Job board and press “Save to tracker”.'}</div>`;
+}
+
+async function patchApp(id, body) {
+  const a = await api(`/api/applications/${id}`, { method: 'PATCH', body });
+  state.apps = state.apps.map((x) => (x.id === id ? a : x));
+  renderTracker();
+  return a;
+}
+
+// ---------- apply by email ----------
+function showEmails(emails = []) {
+  $('#emailFound').innerHTML = emails.map((e) => `<button class="chip" data-email="${esc(e)}">${esc(e)}</button>`).join('');
+  if (emails.length && !$('#emailTo').value) $('#emailTo').value = emails[0];
+  $('#emailMeta').textContent = emails.length ? `${emails.length} recruiter email${emails.length > 1 ? 's' : ''} found` : '';
+  if (emails.length) $('#emailCard').open = true;
+}
+
+function renderAttachments() {
+  const files = [state.resume?.key === jobKey() && { ...state.resume, kind: 'Resume' }, state.cover?.key === jobKey() && $('#autoCover').checked && { ...state.cover, kind: 'Cover letter' }].filter(Boolean);
+  $('#emailAttach').innerHTML = files.length
+    ? files.map((f) => `<span class="file">📎 <a href="${b64ToBlobUrl(f.pdfBase64, 'application/pdf')}" target="_blank">${esc(f.filename)}</a></span>`).join('')
+    : '<span class="hint">Resume and cover letter are attached once written.</span>';
+  return files;
+}
+
+async function draftEmail() {
+  if (currentJob().description.length < 80) await readJob();
+  await ensureResume();
+  if ($('#autoCover').checked) await ensureCover();
+  renderAttachments();
+  progress('Writing the application email…');
+  const out = await api('/api/email/draft', { method: 'POST', body: { job: currentJob(), keywords: state.resume?.keywords?.covered } });
+  $('#emailSubject').value = out.subject;
+  $('#emailBody').value = out.body;
+  $('#emailCard').open = true;
+  $('#emailOut').innerHTML = '<p class="hint">Read and edit the email. Nothing is sent until you press <b>Send email</b> twice.</p>';
+  progress('Email ready: review it, then press Send email');
+  setStep('review');
+}
+
+async function sendEmail() {
+  const to = $('#emailTo').value.trim();
+  const subject = $('#emailSubject').value.trim();
+  const body = $('#emailBody').value.trim();
+  if (!to || !subject || !body) throw new Error('Fill in To, Subject and Message first (or press Write email)');
+  const files = renderAttachments();
+  if (!files.length) throw new Error('Write the tailored resume first (press Write email)');
+  if (!state.emailArmed || Date.now() - state.emailArmed > 10000) {
+    state.emailArmed = Date.now();
+    $('#sendEmail').classList.add('armed');
+    setTimeout(() => $('#sendEmail').classList.remove('armed'), 10000);
+    $('#emailOut').innerHTML = `<p><b>Press Send email again within 10 seconds</b> to send to ${esc(to)} with ${files.length} attachment${files.length > 1 ? 's' : ''}.</p>`;
+    return;
+  }
+  state.emailArmed = 0;
+  $('#sendEmail').classList.remove('armed');
+  const r = await api('/api/email/send', {
+    method: 'POST',
+    body: { to, subject, body, job: { ...currentJob(), url: state.job?.url }, attachments: files.map((f) => ({ filename: f.filename, base64: f.pdfBase64, mime: 'application/pdf' })) },
+  });
+  $('#emailOut').innerHTML = `<p><span class="tag done">sent</span> Sent to ${esc(r.accepted?.join(', ') || to)} from your Gmail. Added to your Tracker as Applied.</p>`;
+  toast('Email sent 🎉');
+  setStep('review', true);
+  loadTracker();
+  if (state.queueIdx >= 0) setTimeout(() => nextInQueue(), 3000);
+}
+
+// ---------- hackathons ----------
+const PLAT = {
+  devpost: { name: 'Devpost', c: '#0ea5b7' },
+  unstop: { name: 'Unstop', c: '#3b82f6' },
+  devfolio: { name: 'Devfolio', c: '#3770ff' },
+  hackerearth: { name: 'HackerEarth', c: '#7c8cff' },
+  hack2skill: { name: 'Hack2skill', c: '#e2512c' },
+  lablab: { name: 'lablab.ai', c: '#7c3aed' },
+  taikai: { name: 'Taikai', c: '#ff2d55' },
+  hackindia: { name: 'HackIndia', c: '#ff7a00' },
+};
+state.hacks = [];
+state.hackOff = new Set();
+state.hackMode = 'all';
+state.savedHacks = new Set();
+
+function closesIn(iso) {
+  if (!iso) return null;
+  const days = (new Date(iso) - Date.now()) / 86400000;
+  if (days < 0) return null;
+  if (days < 1) return { text: `closes in ${Math.max(1, Math.round(days * 24))}h`, cls: 'urgent' };
+  if (days < 4) return { text: `closes in ${Math.ceil(days)} days`, cls: 'soon' };
+  return { text: `closes ${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`, cls: '' };
+}
+
+async function loadHacks(refresh = false) {
+  $('#hackList').innerHTML = `<div class="empty"><span class="big">⏳</span>Fetching hackathons from 8 platforms…</div>`;
+  const r = await api(`/api/hackathons${refresh ? '?refresh=1' : ''}`);
+  state.hacks = r.items || [];
+  state.hackSources = r.sources || {};
+  renderHacks();
+}
+
+function renderHacks() {
+  const src = state.hackSources || {};
+  $('#hackPlatforms').innerHTML = Object.entries(PLAT)
+    .map(([k, p]) => {
+      const st = src[k];
+      const n = state.hacks.filter((h) => h.platform === k).length;
+      return `<button class="plat ${state.hackOff.has(k) ? 'off' : ''} ${st && !st.ok ? 'err' : ''}" data-p="${k}" style="--c:${p.c}" title="${st && !st.ok ? esc(st.error) : 'Tap to show / hide'}"><i></i>${p.name} <b>${st && !st.ok ? '!' : n}</b></button>`;
+    })
+    .join('');
+  const q = $('#hackSearch').value.toLowerCase().trim();
+  const words = q.split(/[\s,]+/).filter(Boolean);
+  const india = $('#hackIndia').checked;
+  let list = state.hacks.filter(
+    (h) =>
+      !state.hackOff.has(h.platform) &&
+      (state.hackMode === 'all' || h.mode === state.hackMode) &&
+      (!$('#hackSaved').checked || state.savedHacks.has(h.id)) &&
+      (!india || h.mode === 'online' || /india|delhi|mumbai|bengaluru|bangalore|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|lucknow|jaipur|ahmedabad/i.test(`${h.location} ${h.title}`) || ['unstop', 'devfolio', 'hack2skill', 'hackindia'].includes(h.platform)) &&
+      (!words.length || words.every((w) => `${h.title} ${h.organizer} ${h.location} ${(h.tags || []).join(' ')} ${h.mode}`.toLowerCase().includes(w))),
+  );
+  const sort = $('#hackSort').value;
+  const far = 8.64e15;
+  if (sort === 'deadline') list.sort((a, b) => (a.deadline ? new Date(a.deadline) : far) - (b.deadline ? new Date(b.deadline) : far));
+  if (sort === 'prize') list.sort((a, b) => (b.prizeUSD || 0) - (a.prizeUSD || 0));
+  if (sort === 'popular') list.sort((a, b) => (b.participants || 0) - (a.participants || 0));
+  $('#hackSummary').textContent = `${list.length} open hackathons${state.hacks.length !== list.length ? ` (of ${state.hacks.length})` : ''} · updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  $('#hackList').innerHTML = list.length
+    ? list
+        .slice(0, 150)
+        .map((h, i) => {
+          const p = PLAT[h.platform] || { name: h.platform, c: 'var(--accent)' };
+          const cl = closesIn(h.deadline);
+          const initials = h.title.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+          const img = safeImg(h.image);
+          const thumb = img ? `style="background-image:url('${esc(img)}')"` : `style="background:${p.c}"`;
+          return `<div class="hack" style="--c:${p.c};--i:${Math.min(i, 30)}">
+            <div class="thumb" ${thumb}>${img ? '' : esc(initials)}</div>
+            <div class="body">
+              <div class="t"><a href="${esc(safeUrl(h.url))}" target="_blank">${esc(h.title)}</a></div>
+              <div class="m">${[h.organizer && h.organizer !== p.name ? esc(h.organizer) : '', h.mode ? esc(h.mode) : '', h.location ? `📍 ${esc(h.location)}` : '', h.participants ? `👥 ${Number(h.participants).toLocaleString()}` : '', h.stage ? esc(h.stage) : ''].filter(Boolean).join(' · ')}</div>
+              <div class="badges"><span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
+            </div>
+            <button class="save ${state.savedHacks.has(h.id) ? 'on' : ''}" data-save="${esc(h.id)}" title="Save">${state.savedHacks.has(h.id) ? '★' : '☆'}</button>
+          </div>`;
+        })
+        .join('')
+    : `<div class="empty"><span class="big">🔎</span>No hackathons match. Try clearing the search or filters.</div>`;
+}
+
+// ---------- documents ----------
+const DOC_NAMES = { photo: 'Photo', signature: 'Signature', marksheet10: '10th marksheet', marksheet12: '12th marksheet', idProof: 'ID proof (Aadhaar)', addressProof: 'Address proof', panCard: 'PAN card', degree: 'Degree certificate', transcript: 'Transcript / grade card' };
+async function loadDocs() {
+  const r = await api('/api/documents').catch(() => null);
+  if (!r) return;
+  const saved = r.saved || {};
+  $('#docsMeta').textContent = `${Object.keys(saved).length}/${r.kinds.length} added`;
+  $('#docs').innerHTML = r.kinds
+    .map((k) => `<div class="doc ${saved[k] ? 'has' : ''}"><div class="dn"><b>${esc(DOC_NAMES[k] || k)}</b><span>${saved[k] ? '✓ ' + esc(saved[k]) : 'not added'}</span></div>
+      <button class="btn ghost sm" data-doc-add="${k}">${saved[k] ? 'Replace' : 'Add'}</button>${saved[k] ? `<button class="btn ghost sm" data-doc-del="${k}">Remove</button>` : ''}</div>`)
+    .join('');
+}
+let docKind = null;
+$('#docs').addEventListener('click', async (e) => {
+  const add = e.target.dataset.docAdd;
+  const del = e.target.dataset.docDel;
+  if (add) {
+    docKind = add;
+    $('#docFile').value = '';
+    $('#docFile').click();
+  }
+  if (del) {
+    await api(`/api/documents/${del}`, { method: 'DELETE' }).catch((err) => toast(err.message, true));
+    loadDocs();
+  }
+});
+$('#docFile').addEventListener('change', async () => {
+  const file = $('#docFile').files[0];
+  if (!file || !docKind) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    await api(`/api/documents/${docKind}`, { method: 'POST', body: fd });
+    toast(`${DOC_NAMES[docKind]} saved`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+  loadDocs();
+});
+
+// ---------- wiring ----------
+function switchTab(name) {
+  if (name === 'hacks' && !state.hacks.length) loadHacks().catch((e) => toast(e.message, true));
+  const btns = [...document.querySelectorAll('nav button')];
+  btns.forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  $('#tabPill').style.transform = `translateX(${btns.findIndex((b) => b.dataset.tab === name) * 100}%)`;
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`));
+}
+
+async function checkServer() {
+  const s = $('#status');
+  try {
+    const h = await api('/api/health');
+    // Most Gemini models out of quota: say so, since AI-only questions will be slow or left for you.
+    const limited = (h.resting || []).length >= 4;
+    s.querySelector('.pill-text').textContent = h.usingLocalAI ? 'local AI (Gemini quota out)' : limited ? 'AI quota low' : `${h.llm.model.replace(/^gemini-/, 'gemini ')}${h.gmail ? ' · gmail ✓' : ''}`;
+    s.title = `${h.llm.provider} · ${h.llm.model} · Gmail ${h.gmail ? 'connected' : 'not connected'}${(h.resting || []).length ? ` · resting: ${h.resting.map((r) => r.model).join(', ')}` : ''}`;
+    s.className = `pill ${limited && !h.usingLocalAI ? 'warn' : 'ok'}`;
+    renderProfile(await api('/api/profile'));
+    loadTracker();
+    loadDocs();
+  } catch {
+    s.querySelector('.pill-text').textContent = 'server offline';
+    s.title = 'Run "npm start" in the server folder';
+    s.className = 'pill bad';
+  }
+}
+
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+const on = (id, fn) => $(id).addEventListener('click', (e) => busy(e.currentTarget, fn)().catch(() => {}));
+on('#runAll', runAll);
+on('#readJob', readJob);
+on('#tailor', tailor);
+on('#cover', coverLetter);
+on('#fill', async () => {
+  state.log = [];
+  document.querySelector('.submit-card').hidden = false;
+  state.startedAt ||= Date.now() - 10 * 60_000;
+  await openApplication(await activeTab()); // on a job page, press "Apply now" first
+  await fillPage(1);
+});
+on('#continue', async () => {
+  state.log = [];
+  state.startedAt ||= Date.now() - 10 * 60_000;
+  await runPages();
+});
+on('#submit', submit);
+on('#importResume', importResume);
+on('#saveProfile', saveProfile);
+on('#openBoard', openBoard);
+on('#scanBoard', scanBoard);
+on('#skipJob', nextInQueue);
+
+// ---------- scripts ----------
+const loadScript = async (name) => (await fetch(chrome.runtime.getURL(`scripts/${name}`))).text();
+on('#copyWellfound', async () => {
+  const code = await loadScript('wellfound-autoapply.js');
+  await navigator.clipboard.writeText(code);
+  const btn = $('#copyWellfound');
+  btn.classList.add('copied');
+  btn.querySelector('span').textContent = 'Copied ✓';
+  toast('Script copied. Paste it into the Wellfound console.');
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    btn.querySelector('span').textContent = 'Copy script';
+  }, 2500);
+});
+$('#viewWellfound').addEventListener('click', async () => {
+  const pre = $('#wellfoundCode');
+  if (pre.hidden && !pre.textContent) pre.textContent = await loadScript('wellfound-autoapply.js');
+  pre.hidden = !pre.hidden;
+  $('#viewWellfound').textContent = pre.hidden ? 'View' : 'Hide';
+});
+on('#selectAll', async () => {
+  visibleJobs().forEach(({ j }) => (j.selected = !j.premium || $('#includePremium').checked)); // premium jobs need a premium login
+  renderJobs();
+});
+on('#scanAll', scanAllBoards);
+on('#saveSelected', async () => {
+  const items = state.boardJobs.filter((j) => j.selected && j.url).map((j) => ({ title: j.title.split(' — ')[0], company: j.title.split(' — ')[1] || j.source, url: j.url, location: j.meta?.split(' · ')[0], source: j.source, status: 'saved' }));
+  if (!items.length) throw new Error('Tick the jobs you want to save');
+  await api('/api/applications/bulk', { method: 'POST', body: { items } });
+  await loadTracker();
+  toast(`Saved ${items.length} job${items.length > 1 ? 's' : ''} to your Tracker`);
+});
+on('#draftEmail', draftEmail);
+on('#sendEmail', sendEmail);
+$('#emailFound').addEventListener('click', (e) => {
+  if (e.target.dataset.email) $('#emailTo').value = e.target.dataset.email;
+});
+on('#refreshTracker', loadTracker);
+on('#refreshHacks', () => loadHacks(true));
+$('#hackSearch').addEventListener('input', renderHacks);
+$('#hackSort').addEventListener('change', renderHacks);
+$('#hackSaved').addEventListener('change', renderHacks);
+$('#hackIndia').addEventListener('change', renderHacks);
+$('#hackMode').addEventListener('click', (e) => {
+  const m = e.target.dataset.m;
+  if (!m) return;
+  state.hackMode = m;
+  document.querySelectorAll('#hackMode button').forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+  renderHacks();
+});
+$('#hackPlatforms').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-p]')?.dataset.p;
+  if (!k) return;
+  state.hackOff.has(k) ? state.hackOff.delete(k) : state.hackOff.add(k);
+  renderHacks();
+});
+$('#hackList').addEventListener('click', (e) => {
+  const id = e.target.dataset.save;
+  if (!id) return;
+  state.savedHacks.has(id) ? state.savedHacks.delete(id) : state.savedHacks.add(id);
+  chrome.storage.local.set({ savedHacks: [...state.savedHacks] }).catch(() => {});
+  e.target.classList.toggle('on');
+  e.target.textContent = state.savedHacks.has(id) ? '★' : '☆';
+  toast(state.savedHacks.has(id) ? 'Saved hackathon' : 'Removed from saved');
+});
+$('#trackSearch').addEventListener('input', renderTracker);
+$('#trackFilter').addEventListener('click', (e) => {
+  if (!e.target.dataset.f) return;
+  state.trackFilter = e.target.dataset.f;
+  renderTracker();
+});
+$('#trackStats').addEventListener('click', (e) => {
+  const g = e.target.closest('[data-g]')?.dataset.g;
+  if (!g) return;
+  state.trackFilter = g;
+  renderTracker();
+});
+$('#trackList').addEventListener('change', async (e) => {
+  const id = e.target.dataset.status;
+  if (!id) return;
+  await patchApp(id, { status: e.target.value }).catch((err) => toast(err.message, true));
+  toast(`Moved to ${STATUS[e.target.value].label}`);
+});
+$('#trackList').addEventListener('focusout', async (e) => {
+  const id = e.target.dataset.notes;
+  if (!id) return;
+  const a = state.apps.find((x) => x.id === id);
+  if (a && (a.notes || '') !== e.target.value) await patchApp(id, { notes: e.target.value }).catch(() => {});
+});
+$('#trackList').addEventListener('click', async (e) => {
+  const del = e.target.dataset.del;
+  const go = e.target.dataset.apply;
+  if (del) {
+    if (e.target.dataset.armed !== '1') {
+      e.target.dataset.armed = '1';
+      e.target.textContent = 'Tap again to delete';
+      return setTimeout(() => { e.target.dataset.armed = ''; e.target.textContent = 'Delete'; }, 3000);
+    }
+    await api(`/api/applications/${del}`, { method: 'DELETE' });
+    state.apps = state.apps.filter((a) => a.id !== del);
+    renderTracker();
+  }
+  if (go) {
+    const a = state.apps.find((x) => x.id === go);
+    state.queue = [{ title: a.title, url: a.url }];
+    await openJob(0).catch((err) => toast(err.message, true));
+  }
+});
+on('#addCurrent', async () => {
+  const tab = await activeTab();
+  const job = await readJob().catch(() => null);
+  $('#addTitle').value = job?.title || tab.title;
+  $('#addCompany').value = job?.company || '';
+  $('#addUrl').value = tab.url;
+});
+on('#addApp', async () => {
+  const title = $('#addTitle').value.trim();
+  if (!title) throw new Error('Enter the role');
+  await api('/api/applications', { method: 'POST', body: { title, company: $('#addCompany').value.trim(), url: $('#addUrl').value.trim(), status: 'applied' } });
+  ['#addTitle', '#addCompany', '#addUrl'].forEach((x) => ($(x).value = ''));
+  await loadTracker();
+  toast('Added to your Tracker');
+});
+on('#clearJobs', async () => {
+  state.boardJobs = [];
+  renderJobs();
+  toast('Job list cleared');
+});
+$('#boards').addEventListener('click', async (e) => {
+  const x = e.target.dataset.x;
+  if (x != null) {
+    BOARDS.splice(Number(x), 1);
+    saveBoards();
+    return renderBoards();
+  }
+  const b = BOARDS[e.target.dataset.b];
+  if (!b) return;
+  $('#boardUrl').value = b.url;
+  await busy($('#openBoard'), openBoard)().catch(() => {});
+});
+on('#saveBoard', async () => {
+  const url = $('#boardUrl').value.trim() || (await activeTab()).url;
+  if (!/^https?:\/\//.test(url)) throw new Error('Paste a board link first');
+  if (BOARDS.some((b) => b.url === url)) throw new Error('That board is already saved');
+  BOARDS.push({ name: new URL(url).hostname.replace(/^www\./, '').split('.')[0], url });
+  saveBoards();
+  renderBoards();
+  toast('Board saved');
+});
+
+on('#startQueue', async () => {
+  state.queue = state.boardJobs.filter((j) => j.selected);
+  if (!state.queue.length) throw new Error('Tick the jobs you want to apply to');
+  await openJob(0);
+});
+$('#jobList').addEventListener('change', (e) => {
+  if (e.target.dataset.i) state.boardJobs[e.target.dataset.i].selected = e.target.checked;
+  renderJobs();
+});
+// "+ skill": you confirm you have it; it joins your profile and the resume is re-tailored with it.
+$('#tailorOut').addEventListener('click', async (e) => {
+  const skill = e.target.closest('[data-skill]')?.dataset.skill;
+  if (!skill) return;
+  const chip = e.target.closest('[data-skill]');
+  chip.disabled = true;
+  try {
+    await api('/api/profile/skills', { method: 'POST', body: { skill } });
+    chip.classList.replace('miss', 'ok');
+    chip.textContent = `✓ ${skill}`;
+    toast(`Added “${skill}” to your skills. Re-tailoring…`);
+    state.resume = null;
+    await busy($('#tailor'), tailor)();
+  } catch (err) {
+    chip.disabled = false;
+    toast(err.message, true);
+  }
+});
+
+$('#fillOut').addEventListener('click', async (e) => {
+  const code = e.target.dataset.copy;
+  if (!code) return;
+  await navigator.clipboard.writeText(code).catch(() => {});
+  e.target.textContent = 'Copied ✓';
+  toast(`Code ${code} copied`);
+});
+
+$('#bank').addEventListener('click', async (e) => {
+  const key = e.target.dataset.forget;
+  if (!key) return;
+  const p = await api('/api/profile');
+  delete p.answerBank[key];
+  renderProfile(await api('/api/profile', { method: 'PUT', body: p }));
+});
+$('#jobFilter').addEventListener('input', renderJobs);
+$('#includePremium').addEventListener('change', renderJobs);
+$('#serverUrl').addEventListener('change', async (e) => {
+  SERVER = e.target.value.trim().replace(/\/$/, '') || 'http://localhost:8787';
+  await chrome.storage.local.set({ server: SERVER });
+  checkServer();
+});
+for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']) {
+  $(`#${id}`).addEventListener('change', (e) => chrome.storage.local.set({ [id]: e.target.checked }));
+}
+
+setInterval(() => $('#status').classList.contains('bad') && checkServer(), 5000); // reconnect when the server starts
+// Tell the background page the panel really opened (Arc pretends to support side panels but never shows them).
+// How this panel is shown: the toolbar popup (Arc shows it as a floating window), a side panel, a tab or a window.
+const PANEL_MODE = new URLSearchParams(location.search).get('mode') || (chrome.extension?.getViews?.({ type: 'popup' })?.includes(window) ? 'popup' : 'sidepanel');
+chrome.runtime.sendMessage({ type: 'panel-alive', mode: PANEL_MODE }).catch(() => {});
+document.documentElement.dataset.mode = PANEL_MODE;
+
+// ---------- pop out (tab / window / side panel) ----------
+async function popOut(how) {
+  const page = await browserTab().catch(() => null);
+  if (how === 'tab') {
+    const base = chrome.runtime.getURL('sidepanel.html');
+    const existing = (await chrome.tabs.query({})).find((t) => t.url?.startsWith(base) && /mode=tab/.test(t.url));
+    if (existing) await chrome.tabs.update(existing.id, { active: true });
+    else await chrome.tabs.create({ url: `${base}?mode=tab`, index: page ? page.index + 1 : undefined, windowId: page?.windowId });
+  } else if (how === 'window') {
+    const r = await chrome.runtime.sendMessage({ type: 'open-window' }).catch(() => null);
+    if (!r?.ok) return popOut('tab');
+  } else if (how === 'sidepanel') {
+    try {
+      await chrome.sidePanel.open({ windowId: page?.windowId });
+      const since = Date.now();
+      let ok = false;
+      for (let i = 0; i < 8 && !ok; i++) {
+        await sleep(125);
+        ok = await chrome.runtime.sendMessage({ type: 'side-panel-open?', since }).catch(() => false);
+      }
+      if (!ok) throw new Error('no side panel');
+    } catch {
+      toast("This browser doesn't show side panels: opening a tab instead");
+      return popOut('tab');
+    }
+  }
+  if (PANEL_MODE === 'popup') window.close(); // the popped-out copy takes over
+}
+$('#popoutBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#popoutMenu').hidden = !$('#popoutMenu').hidden;
+});
+document.addEventListener('click', () => ($('#popoutMenu').hidden = true));
+$('#popoutMenu').addEventListener('click', (e) => {
+  const how = e.target.closest('[data-open]')?.dataset.open;
+  if (how) popOut(how).catch((err) => toast(err.message, true));
+});
+if (typeof chrome.sidePanel?.open !== 'function' || PANEL_MODE === 'sidepanel') $('#openSide').hidden = true;
+$('#popoutNow').addEventListener('click', () => popOut('window'));
+// Long runs need the panel to stay open; a toolbar popup can close when you click the page.
+const notePopup = () => PANEL_MODE === 'popup' && ($('#popupNote').hidden = false);
+for (const id of ['#runAll', '#startQueue', '#continue', '#scanAll']) $(id).addEventListener('click', notePopup, true);
+
+chrome.storage.local.get(['boards', 'boardJobs', 'savedHacks']).then(({ boards, boardJobs, savedHacks }) => {
+  state.savedHacks = new Set(savedHacks || []);
+  state.jobsLoaded = true;
+  BOARDS = [...DEFAULT_BOARDS, ...(boards || [])];
+  renderBoards();
+  if (boardJobs?.length) {
+    state.boardJobs = boardJobs;
+    renderJobs();
+  }
+});
+chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']).then((s) => {
+  if (s.server) SERVER = s.server;
+  $('#serverUrl').value = SERVER;
+  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
+  checkServer();
+});

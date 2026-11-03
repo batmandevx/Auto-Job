@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Intern Bachelors AI – languages and links test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .card { border: 1px solid #ccc; border-radius: 20px; padding: 10px 16px; margin: 6px 0; display: flex; justify-content: space-between; }
+    label { display: block; margin-top: 12px; } select, input { width: 100%; padding: 8px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <h3>First Name</h3><input id="fn" aria-label="First Name" />
+  <section id="langs"><h3>Languages</h3><p>Please indicate which languages you speak.</p><div id="cards"></div><div id="editor"></div><button type="button" id="addLang">ADD LANGUAGE</button></section>
+  <section id="docs"><h3>Supporting Documents and URLs</h3><div id="links"></div><button type="button" id="addLink">ADD LINK</button></section>
+  <pre id="out"></pre>
+<script>
+const langs = [];
+const $ = (s) => document.querySelector(s);
+const cards = () => ($('#cards').innerHTML = langs.map((l) => `<div class="card"><b>${l.name} · ${l.level}</b><button type="button">×</button></div>`).join(''));
+$('#addLang').onclick = () => setTimeout(() => {
+  $('#addLang').style.display = 'none';
+  $('#editor').innerHTML = `<label for="ln">Language *</label><select id="ln"><option value=""></option><option>English</option><option>Hindi</option><option>Tamil</option></select>
+    <label for="lv">Proficiency</label><select id="lv"><option value=""></option><option>Elementary</option><option>Professional working</option><option>Full professional</option><option>Native or bilingual</option></select>
+    <button type="button" id="cancel">CANCEL</button> <button type="button" id="saveLang">ADD LANGUAGE</button>`;
+  $('#cancel').onclick = () => { $('#editor').innerHTML = ''; $('#addLang').style.display = ''; };
+  $('#saveLang').onclick = () => { langs.push({ name: $('#ln').value, level: $('#lv').value }); $('#editor').innerHTML = ''; $('#addLang').style.display = ''; cards(); };
+}, 200);
+let n = 0;
+const addLink = (v = '') => { n++; const d = document.createElement('div'); d.innerHTML = `<label for="l${n}">Link ${n}</label><input id="l${n}" type="text" value="${v}" />`; $('#links').appendChild(d); };
+addLink('https://www.linkedin.com/in/example'); addLink('leetcode.com/u/example'); addLink('example.net'); // what the site imported from the resume
+$('#addLink').onclick = () => setTimeout(addLink, 150);
+window.report = () => ({ langs, links: [...document.querySelectorAll('#links input')].map((i) => i.value), editorOpen: !!$('#ln') });
+</script>
+</body>
+</html>

@@ -376,6 +376,9 @@ async function addSectionEntries(tab, onEditor) {
   }
 }
 
+// "Phone *" / "Phone✱": the panel adds its own star for required fields.
+const starless = (l) => String(l).replace(/\s*[*✱]+\s*$/, '');
+
 // Upload the documents a page asks for (resume, cover letter, ID…), adding a result row for each.
 async function uploadFiles(tab, files, rows, missingRequired) {
   for (const f of files) {
@@ -389,7 +392,7 @@ async function uploadFiles(tab, files, rows, missingRequired) {
       tag = `<span class="tag review">${kind === 'other' ? 'upload it yourself' : doc?.error ? esc(doc.error) : `add your ${DOC_NAMES[kind] || kind} in Profile → Documents`}</span>`;
       if (f.required) missingRequired.push(f.label);
     }
-    rows.push(`<div class="item ${doc?.base64 ? '' : f.required ? 'bad' : 'warn'}" style="--i:${rows.length}"><div class="q">📎 ${esc(f.label.slice(0, 100))}${f.required ? ' *' : ''} <span class="src">${kind}</span></div><div class="v">${tag}</div></div>`);
+    rows.push(`<div class="item ${doc?.base64 ? '' : f.required ? 'bad' : 'warn'}" style="--i:${rows.length}"><div class="q">📎 ${esc(starless(f.label).slice(0, 100))}${f.required ? ' *' : ''} <span class="src">${kind}</span></div><div class="v">${tag}</div></div>`);
   }
 }
 
@@ -478,7 +481,7 @@ async function fillPage(pageNo = 1) {
         : `<span class="tag review">${f.required ? 'required: fill it' : 'left empty'}</span>`;
       const src = source?.[f.id] ? `<span class="src">${{ profile: 'from profile', memory: 'remembered', ai: 'AI', 'cover-letter': 'cover letter' }[source[f.id]] || ''}</span>` : '';
       const cls = (status && status !== 'filled') || (empty && f.required) ? 'bad' : needsReview.includes(f.id) || empty ? 'warn' : '';
-      rows.push(`<div class="item ${cls}" style="--i:${rows.length}"><div class="q">${esc(f.label.slice(0, 120))}${f.required ? ' *' : ''} ${tag}${src}</div><div class="v">${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v ?? '')}</div></div>`);
+      rows.push(`<div class="item ${cls}" style="--i:${rows.length}"><div class="q">${esc(starless(f.label).slice(0, 120))}${f.required ? ' *' : ''} ${tag}${src}</div><div class="v">${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v ?? '')}</div></div>`);
     }
 
     if (otpFields.length) {

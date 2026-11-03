@@ -1,194 +1,550 @@
+<div align="center">
+
+<img src="extension/logo.svg" width="84" alt="Auto Job logo" />
+
 # Auto Job
 
-A Chrome extension and a small local server that apply to jobs for you, and stop before the final Submit so you can review.
+**Your job applications, done in minutes instead of hours, and never sent without your say-so.**
 
-When you press **Do it all on this page**, it:
+A Chrome / Arc extension and a small local server that read a job posting, tailor a one-page ATS-friendly resume and cover letter for it, fill every page of the application form, and stop at the final Submit so you can review.
 
-1. **Reads the job.** It takes the title, company, location and description from the page, and clicks *Apply* if the form isn't open yet.
-2. **Tailors your resume.** It makes a one-page PDF for that job, using only your real experience.
-3. **Writes a cover letter** when the form asks for one, as a file upload or a text box.
-4. **Fills every page.** It handles:
-   - text, email, phone, number and date fields
-   - dropdowns, both native and custom (React-Select, Workday-style)
-   - type-to-search boxes (city, school)
-   - radio buttons, checkboxes, toggles and Yes/No button groups
-   - rich-text boxes
-   - fields inside iframes and shadow DOM
-   - follow-up questions that appear after an answer
-5. **Uploads files**: the tailored resume, the cover letter, and your photo or signature when asked.
-6. **Clicks Next / Continue** and fills each following page, up to the final review page.
-7. **Waits for you.** It submits only when you press Submit twice. If a page is missing something required, or the site shows a validation error, it stops and tells you what to fix. Then press **Continue**.
+`Chrome` · `Arc` · `Edge` · `Brave` · `Gemini` · `Ollama` · `OpenAI-compatible` · `Claude` · `Node.js` · `Manifest V3`
 
-**Job board** mode: paste a careers page or job board link. It lists every posting, you tick the ones you want, and it goes through them one at a time.
+</div>
 
-## How filling stays accurate
+![Auto Job filling a job application: every field outlined green or orange, the panel on the right showing Job, Resume, Fill and Review all done](docs/screenshots/hero-do-it-all.png)
 
-- **Reads every field back.** After filling, it checks what the field actually shows. If a value didn't stick, it tries another way.
-- **Dropdowns:** opens the list, uses a search box inside it if there is one, scrolls long or lazy lists (like Workday's country list), and falls back to typing the first letters. Options are scored, so "India" beats "Indiana" and "Indonesia", and synonyms count: India = IN = "India (+91)", Yes = "Yes, I am authorized…", Bachelor's = "B.Tech / B.E.".
-- **Fixes validation errors.** It reads per-field error messages and the error banner at the top of the page, then corrects those fields:
-  - Common errors are fixed instantly in code: phone digits, date formats, missing https://, length limits, numbers-only fields.
-  - Everything else goes to the AI, with the site's message and the rejected value.
-  - It retries Next up to 3 times before asking you.
-- **Repeating sections:** for "Work Experience → Add" and "Education → Add", it adds entries up to your 3 most recent jobs and your degree. Each field is labelled "Work Experience #2 › Job Title", so every job lands in the right entry, with dates in the format the form uses.
-- **Tags, dates and staged pages:** skills-style tag inputs get one chip per item. Read-only date pickers are filled in their own format (MM/YYYY, DD/MM/YYYY…). It waits for pages that load fields in stages, and Google Places address boxes get a suggestion picked.
-- **Div-based "Search & Select" dropdowns** (Recruit CRM, vue-multiselect, ng-select…) are detected by their placeholder. Their options are read from whatever popup appears when clicked, and every list is closed again, so no option goes to the wrong field.
-- **Agreement questions** ("I understand…", "I acknowledge…", "I hereby declare…") are answered "I Agree" / "Yes" instantly and flagged for you. Profile facts fill dropdowns directly (passout year 2027, country, state), and "Post Graduation Year (if applicable)" gets "Not applicable".
-- **Documents:** in Profile → Documents, add your 10th and 12th marksheets, ID proof, address proof, degree certificate and transcript once (PDF, PNG or JPG, stored only in `data/documents`). Upload fields asking for them are filled automatically. A passport-size **photo** field gets your photo, never your ID.
-- **Never guesses past you.** If a field still can't be filled, the panel says exactly which one and why.
+<sub>One press of **Do it all on this page**. Auto Job read the job, tailored a resume (95% keyword match) and a cover letter, uploaded both, filled all 14 fields and stopped for review. Green = from your profile. Orange = written by AI or a consent box, please check. (Demo profile: "Riya Sharma" is made up.)</sub>
 
-Test pages: http://localhost:8787/test/tricky.html (Workday-style lists, validation errors) and http://localhost:8787/test/oracle.html (Oracle sign-in with a 6-box code).
+---
 
-## Your job boards
+## Contents
 
-The **Job board** tab has one-tap presets for:
-- The Job Company: all jobs and internships
-- Let's Code
-- EngineerHub: internships and jobs
-- Debug with Shubham
-- Crack Off-Campus
+- [Why Auto Job](#why-auto-job)
+- [What it does](#what-it-does)
+- [Tour](#tour)
+- [How it works](#how-it-works)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Using every feature](#using-every-feature)
+- [The form-filling engine](#the-form-filling-engine)
+- [Answers that never depend on the AI](#answers-that-never-depend-on-the-ai)
+- [The resume and cover letter](#the-resume-and-cover-letter)
+- [How it stays honest](#how-it-stays-honest)
+- [Privacy and security](#privacy-and-security)
+- [Configuration](#configuration)
+- [Server API](#server-api)
+- [Project structure](#project-structure)
+- [Testing without a real job](#testing-without-a-real-job)
+- [Troubleshooting](#troubleshooting)
+- [Limits](#limits)
 
-**Scan all my boards** opens each one and merges every posting into one list, shown as "Role — Company · location · pay". Filter it, tick jobs, then press **Start applying**. Use **+ Save board** to add any other site.
+---
 
-- **Multiple Apply steps:** boards often need several "Apply" clicks (job page → countdown page → company careers site). The extension follows up to 4 of them, including ones that open a new tab.
-- **Crack Off-Campus:** job details need you to be logged in to the site in Chrome. Premium (paywalled) jobs are marked and left unticked.
-- **Let's Code:** its jobs page is currently empty and points to a sign-in-only job finder.
+## Why Auto Job
 
-**Wellfound:** the Job board tab also has a **Copy script** button for your Wellfound console script. That script submits without review.
+Applying for one job takes about 20–40 minutes. That's rewriting the resume for the posting, writing a cover letter, and typing the same facts into Workday for the fifth time that week. Most of that time is copy-paste, and the copy-paste is where mistakes slip in: a phone number with the code twice, the wrong notice period, a "Yes" where you meant "No".
 
-## Hackathons
+Auto Job does the repetitive part and leaves the decisions to you:
 
-The **Hacks** tab lists open hackathons from 8 platforms: **Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia**.
+| You used to | Auto Job does |
+|---|---|
+| Rewrite your resume for every posting | Tailors a one-page PDF to the job's keywords, using only your real experience |
+| Write a cover letter from scratch | Writes a specific, four-paragraph letter with your real numbers |
+| Type the same 40 facts into every portal | Fills them from your profile: phone, address, CTC, notice period, links, EEO answers |
+| Fight Workday dropdowns and date boxes | Opens lists, searches, walks nested categories, types split MM / YYYY boxes |
+| Click Next, fix errors, click Next again | Moves page to page, reads the site's error messages and corrects them |
+| Hunt for the OTP in Gmail | Reads the code (or verification link) from your inbox and enters it |
+| Track 30 applications in a spreadsheet | Keeps a tracker with statuses from *Applied* to *Offer* |
 
-- **Filters:** search by keyword (AI, web3, a city…), show or hide platforms, and pick online / in person / hybrid. **India / online** limits it to India-based or online events.
-- **Sort:** closing soonest, biggest prize, or most popular.
-- **Deadlines** are colour-coded: red under 24 h, amber under 4 days.
-- **★ Save** a hackathon to keep it on your shortlist.
-- **Refreshing:** results are cached for 30 minutes and kept on disk. If a platform is down, its last results stay visible and its chip shows "!".
+**What it will not do:** press the final Submit for you, invent experience, or solve CAPTCHAs. You stay in control of everything that matters.
 
-## Tracker
+## What it does
 
-The **Tracker** tab keeps every application in one place.
+- **🧭 Finds the form.** On a job page it presses *Apply now*. It follows up to four "Apply" steps (job board → countdown page → company site → form), including ones that open a new tab.
+- **📄 Tailors your resume.** It builds a one-page, single-column, ATS-safe PDF for each job:
+  - your experience reordered and reworded to the job's own terms
+  - skills grouped the way recruiters scan them
+  - links you can click
+  - a keyword-coverage report
+- **✉️ Writes the cover letter.** Four paragraphs (hook, proof, fit, close) with your real numbers. A quality check rewrites any letter that's too long or full of stock phrases.
+- **✍️ Fills every field type:**
+  - text, email, phone, number and date boxes
+  - native and custom dropdowns: React-Select, MUI, Workday prompts, "Search & Select"
+  - type-to-search boxes
+  - radios, checkboxes and toggles
+  - Yes/No button groups
+  - tag inputs
+  - rich text
+  - repeating sections (Work Experience 1, 2, 3…)
+  - fields inside iframes and shadow DOM
+- **📎 Uploads documents.** Resume, cover letter, and also photo, signature, marksheets, ID / address proof and PAN when a form asks for them.
+- **🔁 Works through every page.** It clicks *Next*, waits for questions that only appear after an answer, fixes validation errors and retries.
+- **🔐 Handles email verification.** It reads one-time codes (including 6-box inputs) and "verify your email" links from Gmail, read-only.
+- **📨 Applies by email.** When a post just says "send your CV to hr@…", it drafts the email with the files attached and sends it from your Gmail after you confirm.
+- **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list, and applies to the ones you tick, one after another.
+- **🏆 Lists hackathons** from 8 platforms in one searchable list.
+- **📊 Tracks your applications** from *To apply* to *Offer*.
+- **🛑 Waits for you at the end.** You review the highlighted fields and press Submit twice.
 
-- **Statuses:** To apply → Applied → Assessment → Interview 1 / 2 / 3 → HR round → Offer → Accepted, plus Rejected and Withdrawn.
-- **Added automatically:** jobs you submit, and jobs you email, are added as *Applied*.
-- **Save jobs for later:** on the **Jobs** tab, tick jobs and press **☆ Save to tracker** to save them as *To apply*.
-- **On each card:** change the status from its dropdown, add notes (recruiter, test date…), and see a timeline of status changes. *To apply* cards also have an **Apply now** button.
-- **Overview:** counters at the top show To apply / In process / Offers / Rejected, with a pipeline bar. Tap a counter to filter.
+## Tour
 
-## Apply by email
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/panel-apply.png" alt="Apply tab: four steps and the Do it all button" /><br><b>Apply</b>: one button runs Job → Resume → Fill → Review. Switches for auto-Next, cover letter, "only empty fields" and 100% keywords.</td>
+<td width="50%"><img src="docs/screenshots/fill-results.png" alt="Fill results list in the panel" /><br><b>Fill results</b>: every field, its value, and where the value came from (profile, memory or AI). Anything that needs you is listed first.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/tailored-resume.png" alt="Tailored one-page resume" /><br><b>Tailored resume</b>: one page, single column, real text, clickable links, the job's title and keywords up top. Every number comes from your own resume.</td>
+<td><img src="docs/screenshots/cover-letter.png" alt="Generated cover letter" /><br><b>Cover letter</b>: opens with your most relevant result, proves fit with two achievements, closes with a call to action. No "I am writing to express my interest".</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/workday-fill.png" alt="Workday-style experience page filled" /><br><b>Workday-style pages</b>: Work Experience entries from your profile in order, split MM / YYYY date boxes, "I currently work here" ticked only for your current job.</td>
+<td><img src="docs/screenshots/panel-jobs.png" alt="Jobs tab with job board presets and a merged job list" /><br><b>Jobs</b>: one-tap job boards. "Scan all my boards" merges every posting into one list; tick jobs and press <i>Start applying</i>.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/panel-hacks.png" alt="Hackathons tab" /><br><b>Hacks</b>: open hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia, with prize, mode and deadline.</td>
+<td><img src="docs/screenshots/panel-tracker.png" alt="Tracker tab" /><br><b>Tracker</b>: every application with its status, a timeline and notes. Counters for To apply / In process / Offers / Rejected.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/panel-profile.png" alt="Profile tab" /><br><b>Profile</b>: import one or several resumes (merged into one master profile), personal details, documents, standard answers, remembered answers.</td>
+<td><img src="docs/screenshots/panel-apply-light.png" alt="Apply tab in light mode" /><br><b>Light and dark</b>: follows your system theme. Runs as a side panel in Chrome / Edge / Brave, and as a popup, tab or window in Arc.</td>
+</tr>
+</table>
 
-Some posts only say "send your resume to hr@…".
+## How it works
 
-1. **Do it all** detects that and opens **Apply by email**. You can also open the section yourself.
-2. It writes a short, specific email (no graduation year, "can start immediately"), with your strongest results for that job and your links.
-3. It attaches the tailored resume and cover letter.
-4. Edit anything you like, then press **Send email** twice. It sends from your Gmail, using the same App Password, and adds the job to the Tracker.
+### One press of "Do it all on this page"
 
-## Setup (once)
-
-```bash
-cd server
-npm install
-cp .env.example .env      # then put your GEMINI_API_KEY in server/.env
+```mermaid
+flowchart TD
+    A([You press Do it all]) --> B[Read the job: title, company, location, description]
+    B --> C{Is the application form on this page?}
+    C -- "No: it's a job page" --> D[Press Apply now and follow up to 4 hops]
+    D --> C
+    C -- Yes --> E[Tailor a one-page resume to the job's keywords]
+    E --> F{Form asks for a cover letter?}
+    F -- Yes --> G[Write the cover letter, quality-check it]
+    F -- No --> H
+    G --> H[Upload files first: resume, cover letter, documents]
+    H --> I[Scan every field on the page, in every frame]
+    I --> J[Answer each field: profile rules, then memory, then AI]
+    J --> K[Fill, then read each field back]
+    K --> L{Any field wiped, rejected or flagged by the site?}
+    L -- Yes --> M[Fix it: retype, reformat, reselect, ask AI with the site's message]
+    M --> K
+    L -- No --> N{Email code or verification link needed?}
+    N -- Yes --> O[Read it from Gmail and enter it or open it]
+    O --> I
+    N -- No --> P{CAPTCHA on the page?}
+    P -- Yes --> Q[Highlight it and wait for you to type it]
+    P -- No --> R{Next button and Auto Next on?}
+    Q --> R
+    R -- Yes --> S[Click Next, wait for the new page]
+    S --> I
+    R -- "No: final page" --> T([Stop: you review and press Submit twice])
 ```
 
-Load the extension:
+### The form-filling loop on each page
 
-1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and choose the `extension` folder.
-3. Pin **Auto Job** and click it to open the side panel.
-
-### Using Arc (or any browser)
-
-Click the Auto Job icon: the full panel opens as a floating popup (Arc shows it like other extensions' popups).
-
-- **Long runs** (Do it all, job board queue): a popup can close when you click the page, so press **⧉** in the panel header and choose **Open beside this page** (a tab, which you can put in Arc **Split View**) or **Open in a window**. The popped-out panel keeps working on the last web page you were on.
-- **Chrome / Edge / Brave:** ⧉ → **Open side panel**.
-
-Arc setup: open `arc://extensions`, turn on **Developer mode**, then **Load unpacked** the `extension` folder (or click ↻). Pin Auto Job from the puzzle-piece menu.
-
-## Every time
-
-```bash
-cd server && npm start
+```mermaid
+sequenceDiagram
+    participant P as Side panel
+    participant C as Content script (in the page)
+    participant S as Local server
+    participant AI as LLM (Gemini / Ollama / ...)
+    P->>C: scan()
+    C-->>P: fields (label, type, options, required, section, entry...)
+    P->>S: POST /api/answer {fields, job}
+    S->>S: profile rules (instant, no AI)
+    S->>S: remembered answers
+    S->>AI: only what's left, in one batch
+    AI-->>S: values + needs-review list
+    S-->>P: values, sources, needsReview
+    P->>C: fill(values)
+    C->>C: type like a person, read back, retry another way
+    C-->>P: filled / didn't stick / no option matches
+    P->>C: fieldErrors()
+    C-->>P: the site's own error messages
+    P->>S: POST /api/answer {fields, errors}
+    S-->>P: corrected values (quick fixes, then AI)
+    P->>C: fill(corrected)
 ```
 
-### Profile tab
-- **Resume(s):** pick one or several resume versions (PDF or DOCX). They are merged into one master profile that keeps every distinct bullet point.
-- **Personal details:** date of birth, address, nationality and so on, for forms that ask.
-- **Standard answers:** work authorization, notice period, salary, EEO answers.
-- **Remembered answers:** answers from forms you submitted, reused next time. Job-dependent answers (sponsorship, salary, "why us?") are never remembered.
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["Your browser: Chrome, Arc, Edge or Brave"]
+        direction TB
+        UI["Panel UI<br/>sidepanel.html / .js<br/>Apply · Jobs · Hacks · Tracker · Profile"]
+        BG["Service worker<br/>background.js<br/>opens panel / tab / window"]
+        CS["Content script<br/>content.js<br/>scan · fill · verify · navigate"]
+        PAGE[("Job page and<br/>application form")]
+        UI -- "chrome.scripting<br/>(all frames)" --> CS
+        CS --> PAGE
+        BG --- UI
+    end
+
+    subgraph Server["Local server: Node + Express, 127.0.0.1:8787"]
+        direction TB
+        API["index.js<br/>REST API + origin check"]
+        ANS["answer.js<br/>profile rules · quick fixes"]
+        TAI["tailor.js · keywords.js<br/>resume tailoring + keyword coverage"]
+        PDF["pdf.js<br/>one-page resume and cover letter PDFs"]
+        LLM["llm.js<br/>model chain · quota rest · fallback"]
+        MAIL["mail.js<br/>Gmail: codes, links, send"]
+        HACK["hackathons.js<br/>8 platforms"]
+        STORE["store.js<br/>profile · tracker · documents"]
+        API --> ANS & TAI & PDF & MAIL & HACK & STORE
+        ANS --> LLM
+        TAI --> LLM
+    end
+
+    DATA[("data/ on your Mac<br/>profile.json · documents/<br/>resumes/ · applications.json")]
+    GEM["Gemini API"]
+    OLL["Ollama (local)"]
+    GMAIL["Gmail over IMAP / SMTP"]
+    WEB["Hackathon sites"]
+
+    UI -- "HTTP, localhost only" --> API
+    STORE --- DATA
+    LLM --> GEM
+    LLM -. "when Gemini is out of quota" .-> OLL
+    MAIL --> GMAIL
+    HACK --> WEB
+```
+
+**Why a local server?** The panel can't keep secrets or write files safely. The server holds your API key and Gmail app password in `server/.env`, keeps your profile and documents on your own disk, renders PDFs, and talks to the AI. It listens on `127.0.0.1` only and refuses requests from other websites, so a page you visit can't read your profile.
+
+### Which model answers what
+
+```mermaid
+flowchart LR
+    Q["Field to answer"] --> R{"Profile rule matches?<br/>name, phone, CTC, notice,<br/>work auth, EEO, dates..."}
+    R -- Yes --> V1["Instant answer, no AI"]
+    R -- No --> M{"Remembered from a<br/>form you submitted?"}
+    M -- Yes --> V2["Reuse it"]
+    M -- No --> G["Gemini (model chain)"]
+    G -- "quota out / overloaded" --> O["Ollama on your Mac"]
+    G --> V3["AI answer, marked orange"]
+    O --> V3
+```
+
+## Quick start
+
+You need **Node.js 20+**, **Google Chrome or Arc**, and either a **Gemini API key** (free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) or **[Ollama](https://ollama.com)** for a fully local model.
+
+**1. Get the code and start the server**
+
+```bash
+git clone https://github.com/batmandevx/Auto-Job.git
+```
+
+```bash
+cd Auto-Job/server && npm install
+```
+
+```bash
+cp .env.example .env
+```
+
+Open `server/.env`, set `LLM_PROVIDER=gemini` and paste your key into `GEMINI_API_KEY=`. Then start it:
+
+```bash
+npm start
+```
+
+You should see `Auto Job server on http://localhost:8787`.
+
+**2. Load the extension**
+
+| Chrome / Edge / Brave | Arc |
+|---|---|
+| Open `chrome://extensions` | Open `arc://extensions` |
+| Turn on **Developer mode** | Turn on **Developer mode** |
+| **Load unpacked** → choose the `extension` folder | **Load unpacked** → choose the `extension` folder |
+| Pin **Auto Job** and click it | Pin it from the puzzle-piece menu and click it |
+
+**3. Import your resume**
+
+Open the panel → **Profile** → **Choose resume files** → pick one or more resume versions (PDF / DOCX) → **Import resume**. Then fill **Personal details** and **Standard answers** once (notice period, expected CTC, work authorisation, and so on).
+
+**4. Apply**
+
+Open any job posting, press **Do it all on this page**, review the orange fields, and press **I've checked everything: Submit** twice.
+
+> **Optional:** connect Gmail for one-time codes. Create an App Password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (needs 2-Step Verification), then set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in `server/.env` and restart. The panel header shows **gmail ✓**.
+
+## Using every feature
 
 ### Apply tab
-- **Do it all on this page:** runs the full flow above.
-- **Settings:**
-  - *auto-click Next* (on by default)
-  - *cover letter when asked* (on)
-  - *only empty fields* (on): leaves alone anything the site already filled, for example after "Autofill from resume".
-- **Outlines on the page:** green means filled from your profile or memory. Orange means the AI wrote it or it needs your check. Always read the orange ones.
 
-Your files are stored in `data/`, which is never committed:
-
-| Path | What it holds |
+| Control | What it does |
 |---|---|
-| `data/profile.json` | your profile |
-| `data/documents/` | photo and signature |
-| `data/resumes/` | every tailored resume and cover letter PDF |
-| `data/applications.json` | log of submitted applications |
+| **Do it all on this page** | The whole flow: read the job → press Apply → tailor → cover letter → fill every page → stop at review. |
+| **1 · Job** | Reads the posting (JSON-LD, page text, visible description only). You can edit title, company and location before tailoring. |
+| **2 · Resume & cover letter** | Tailor on its own, see the keyword coverage, download the PDF, write a cover letter, or open **Apply by email**. |
+| **3 · Fill form** | **Fill this page** (also presses *Apply now* first on a job page) and **Continue to next pages**. |
+| **Auto Next** | Clicks Next / Continue / Save and Continue after each page. Never clicks the final Submit. |
+| **Cover letter** | Writes and attaches a cover letter whenever the form asks for one (file or text box). |
+| **Only empty** | Leaves alone what the site already filled, for example after "Autofill with resume". Boxes the site still flags as empty, and link boxes, are always fixed. |
+| **100% keywords** | Puts job keywords you don't have yet on a visible "Familiar with / learning" line. Off by default. |
+| **I've checked everything: Submit** | Press twice within 10 seconds. Only then does Auto Job click the site's Submit, add the job to your Tracker and remember your reviewed answers. |
 
-## Gmail: verification codes and links
+**Colours on the page:** green = filled from your profile or memory · orange = AI-written, consent box or "please check" · red = needs you.
 
-Many job sites email you a code, or a "verify your email" link, partway through applying. With Gmail connected:
+**Opening the panel in Arc:** clicking the icon opens Auto Job as a popup. For long runs press **⧉** → **Open beside this page** (use Arc Split View) or **Open in a window**. It keeps working on the last web page you used. In Chrome, **⧉ → Open side panel** docks it.
 
-- **Code fields:** a single box or the 6-box kind is filled automatically. The panel waits up to 2 minutes for the email to arrive.
-- **"Check your email" pages:** it finds the verification link and opens it. It only opens links on the job site's own domain, the company's domain or a known applicant-tracking system. Anything else is shown to you with an Open link instead.
-- **Read-only:** it reads your inbox and never sends, moves or deletes email.
+### Jobs tab: job boards and the queue
 
-Setup, once:
+1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
+2. **Scan all my boards** opens each one and merges every posting into one list: *Role · Company · location · pay*.
+3. Filter titles, tick the jobs you want (**Select all shown** helps), then press **Start applying**. Auto Job opens each job, applies, fills and waits for your review. **Skip this job** moves on.
+4. **☆ Save to tracker** saves ticked jobs as *To apply*.
+5. **+ Save board** keeps any link as a one-tap board.
+6. **Copy Wellfound script:** copies a console script for Wellfound. Note that this script submits without review.
 
-1. Turn on 2-Step Verification for your Google account: https://myaccount.google.com/security
-2. Create an App Password at https://myaccount.google.com/apppasswords. Name it "Auto Job" and copy the 16-letter password.
-3. In `server/.env`, set `GMAIL_USER=you@gmail.com` and paste the password into `GMAIL_APP_PASSWORD=`.
-4. Restart the server. The panel header shows **gmail ✓**.
+### Hacks tab
 
-To disconnect, delete the App Password at the same Google page.
+- Open hackathons from **Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia**, with prize, mode, location, team size, themes and deadline.
+- **Search** (AI, web3, fintech, a city…), filter **Online / In person / Hybrid**, **India / online** only, **Saved only**, and sort by **closing soon**, **biggest prize** or **most popular**.
+- Deadlines turn **red** under 24 hours and **amber** under 4 days. **☆** saves one to your shortlist.
+- Results are cached for 30 minutes and kept on disk. If a platform is down, its last results stay and its chip shows "!".
 
-**Sign-in pages:** job sites that make you create an account or sign in still need you to type the password. The extension never fills password fields. Chrome's own password manager can fill them for you.
+### Tracker tab
 
-## AI models (`server/.env`)
+- Statuses: **To apply → Applied → Assessment → Interview 1 / 2 / 3 → HR → Offer → Accepted**, plus **Rejected** and **Withdrawn**.
+- Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
+- Each card has a status dropdown, a timeline, notes (recruiter, test date, link) and **Open job**.
+- Counters at the top filter the list. Search by company or role.
 
-The default is Gemini:
+### Profile tab
 
-| Model | Setting | Used for |
-|---|---|---|
-| `gemini-3.5-flash-lite` | `GEMINI_MODEL` | form answers, about 1–2 s |
-| `gemini-3.5-flash` | `GEMINI_HEAVY_MODEL` | resume import, tailoring and cover letters |
+- **Resume import:** pick several versions (for example an AI resume and a full-stack resume). They're merged into one master profile that keeps every distinct bullet. Manual edits you made survive a re-import.
+- **Personal details:** DOB, gender, pronouns, marital status, parents' names, address, nationality, languages, 10th / 12th schooling. These are for forms that ask.
+- **Documents:** photo, signature, 10th / 12th marksheets, ID proof, address proof, PAN, degree, transcript (PDF / PNG / JPG). Upload fields that ask for one get the right file. A "passport size photo" always gets your photo, never your ID.
+- **Standard answers:** work authorisation, sponsorship, notice period (text and days), expected and current CTC (text and annual number), relocation, fresher status, EEO answers, how you heard about jobs, government employment.
+- **Remembered answers:** answers from forms you reviewed and submitted, reused next time. Answers that change per job (salary, "why us", sponsorship) are never remembered.
+- **Server:** change the server address if you don't run it on port 8787.
 
-**Free-tier quota:** a free key gets about **20 requests per model per day**. The server rotates through several models (`GEMINI_FALLBACK_MODELS`) and skips any that are out of quota until it resets at midnight Pacific time. One application uses about 3–6 requests: one each for the resume and cover letter, and one per form page. For heavier use, enable billing on the key.
+### Apply by email
 
-**Other providers:**
-- **Local:** `LLM_PROVIDER=ollama` runs your local model. It's slower but needs no quota.
-- **OpenAI-compatible:** `LLM_PROVIDER=openai`.
-- **Claude:** `LLM_PROVIDER=anthropic`.
+When a post only gives an email address:
+
+1. **Do it all** detects that and opens **Apply by email**, or you can open it from step 2.
+2. It drafts a short, specific email: your strongest results for this job, your links, and "can start immediately".
+3. It attaches the tailored resume and cover letter.
+4. You edit anything, press **Send email** twice, and it sends from your Gmail and adds the job to the Tracker.
+
+### Gmail: codes and verification links
+
+- **Code fields:** one box or six separate boxes. Auto Job waits up to 2 minutes for the email, pastes the code and checks that every box holds its digit.
+- **"Check your email" pages:** it finds the verification link and opens it, but only on the job site's domain, the company's domain or a known ATS. Anything else is shown to you as a link.
+- **Read-only inbox access.** It never moves or deletes email. Sending only happens for **Apply by email**, after your two clicks.
+
+## The form-filling engine
+
+What makes it work on real portals and not only on simple forms:
+
+| Problem on real sites | How Auto Job handles it |
+|---|---|
+| **Workday ignores pasted values** ("must have a value" next to text that's clearly there) | Types through the browser's own editing (`insertText`), so the site sees real typing with the cursor at the end, then sends the focus-out events React listens for. If a box is still flagged, it retypes it key by key. |
+| **Workday split date boxes** | Recognises month / year / day sections and types `07` and `2026` into the right boxes. |
+| **Workday prompts** (school, field of study, "How did you hear about us?") | Searches with Enter, tries shorter names and acronyms ("Vellore Institute of Technology" → "VIT University"), and walks nested lists (*Job Boards › LinkedIn*). Picks "Other" when the page says to. |
+| **Custom dropdowns** (React-Select, MUI, vue-multiselect, "Search & Select" divs) | Opens the list, uses its search box, scrolls lazy lists, retries with the first word ("Chennai, Tamil Nadu" → "Chennai"), and closes every list so no option lands in the wrong field. |
+| **Fuzzy options** | Scores options with synonyms: "India" beats "Indiana", B.Tech → Bachelor of Engineering → Bachelor's, "M" / "F" lists, "Yes, I agree." for agreements. |
+| **Sites that rewrite the form after the resume upload** (PyjamaHR) | Uploads files first, then fills, then re-checks every field at the end and refills anything that was wiped. |
+| **Repeating sections** | Adds Work Experience / Education / Language entries up to what your profile has. It fills editor boxes and presses their own *Add* / *Save*, and opens imported cards flagged "Fields to fix". |
+| **Link rows** ("Work Link [+]", "Link 1 / 2 / 3") | Presses "+" for more boxes and fills both portfolios, LinkedIn and GitHub, always with full `https://` URLs. |
+| **Phone with a separate country-code box** | Enters just the 10 digits. Phone extensions stay empty. |
+| **Validation errors** | Reads each field's error and the page's error banner. Common fixes (digits only, date format, missing `https://`, length) are instant. Anything else goes back to the AI with the site's message and the rejected value. |
+| **Hidden padding** (zero-width spaces in labels) | Strips it so the question is read correctly. |
+| **Job page vs form** | Ignores the site's search box, menus and "Save job" toggles, presses *Apply now*, and never presses a form's own "Apply" submit button. |
+| **CAPTCHAs** | Never guessed or solved. The box is highlighted, your cursor is put in it, and the run waits for you. |
+
+**Built against real portals:** fixes came from live applications on Workday (U.S. Bank), Lever (Acron Aviation), Phenom (GE HealthCare), PyjamaHR, Recruit CRM and Indian job boards. Each has a matching test page in `server/test/`. Greenhouse, Ashby, SmartRecruiters, iCIMS and other ATS links are recognised, and every other site gets the same generic engine.
+
+## Answers that never depend on the AI
+
+These come straight from your profile in milliseconds, so they're right even when the AI quota is out:
+
+| Question (any wording) | Answer |
+|---|---|
+| Name, email, phone, address, PIN, city, state, country, DOB, gender, pronouns, marital status, parents' names | From **Personal details** (dates in the format the question asks for) |
+| LinkedIn, GitHub, portfolio, "Link 2", "Other website" | Your links, a different one per box |
+| School, degree, field of study, CGPA, graduation month / year, 10th / 12th details | From your education (degree matched to the form's list) |
+| Academic standing (Freshman … Senior year) | Worked out from your degree's start year |
+| Notice period / "how soon can you join" | Text, or a number of days when the box wants days |
+| Expected / current CTC | Text ("₹12–18 LPA") or a full number when the box wants one ("in INR", "mention full no") |
+| Total experience (years / months), "I am a fresher" | From your standard answers |
+| Legally authorised to work / visa sponsorship | From the job's country: Yes / No for India, the honest answer abroad |
+| Willing to relocate / work from the posted location | Yes |
+| Non-compete, younger than 18, former government employee | No |
+| Family at the company, past work for the company or its consultants | No (Yes only if the company is in your experience) |
+| How did you hear about us? | LinkedIn → company website → job board, whichever the list has |
+| Languages and proficiency | Each language, native or fluent |
+| Work Experience #n fields | Your n-th role: title, company, location, dates, "currently work here", bullet points |
+| Race, veteran status, disability status | Your saved answers |
+| Consent and declaration boxes | Ticked, and marked orange for you to check |
+
+## The resume and cover letter
+
+```mermaid
+flowchart TD
+    A[Job description] --> K[Extract every hard skill the job asks for]
+    P[Your master profile] --> M
+    K --> M[Match against your resumes, with true synonyms: Postgres = PostgreSQL]
+    M --> T[AI picks and rewords your bullets, within the same role only]
+    T --> F{Faithful to the original?<br/>same numbers, close wording}
+    F -- No --> O[Keep your original bullet]
+    F -- Yes --> W[Use the reworded bullet]
+    O --> S
+    W --> S[Headline = the posted role + core skills<br/>Summary = identity, two real results, stack]
+    S --> G[Skills grouped: Languages · Generative AI · AI/ML · Data & Backend · Cloud & MLOps]
+    G --> C[Remove filler words: successfully, proficient in, extensive...]
+    C --> R[Render one page: tighten spacing, trim least relevant content,<br/>then refill freed space with your best bullets]
+    R --> PDF[["One-page ATS-friendly PDF with clickable links"]]
+```
+
+- **ATS-friendly by design:** a single column, real selectable text in a standard font, no tables, images or text boxes, standard section names, and the posted job title in the headline.
+- **Keyword coverage:** every job keyword you genuinely have appears in the job's own spelling. Keywords you don't have are listed so you can add them if they're true (tap a **+ chip**), or put on a "Familiar with / learning" line with the 100% switch.
+- **Bullets with rhythm:** action verb → what you built → the tools the job asks for → the real result. No two bullets in a role start with the same verb.
+- **Cover letters with a quality check:**
+  - 250–330 words in four paragraphs: hook, proof, fit, close.
+  - It's checked for length, paragraph count and stock phrases ("I am writing to express", "leveraging", "proves my ability"…). If it fails, the AI is told exactly what to fix and rewrites it once.
+- **Your rules:** no graduation year or "student" timing in the summary, cover letter or written answers, and "can start immediately".
 
 ## How it stays honest
 
-- **Profile fields:** name, email, phone, links, date of birth and address come straight from your profile, with no AI involved.
-- **100% keywords switch (Apply tab, off by default):** job keywords you don't have yet go onto a visible **"Familiar with / learning"** line, so keyword filters see full coverage. Bullets, numbers and employers are never invented. Be ready to talk about anything on that line in an interview.
-- **Job keywords:** every hard skill in the job description is checked against your resumes, including true synonyms like Postgres = PostgreSQL. Matches go into a "Key skills for this role" line in the job's own spelling, and the cover letter uses them. Skills you don't have are never added. They show as **+ chips**; tap one only if you really have it, and it's saved to your profile.
-- **Tailoring:** the AI can only reorder and reword bullets **within the same job**. The server rejects any rewrite that changes or adds numbers, or drifts too far from the original, and keeps your original bullet instead. It also drops skills you never listed.
-- **Unknown facts**, like a salary you didn't enter, are left blank and flagged. They are never guessed.
-- **Always flagged for review:** AI-written answers, consent checkboxes and empty required fields.
+- **Nothing is invented.** The AI can only choose and reword bullets within the same job. The server rejects any rewrite that adds or changes a number, or drifts too far from your original. Skills you never listed are dropped.
+- **Facts come from your profile, not from the AI.** If a fact is missing (say a salary you never entered), the field is left empty and flagged.
+- **Everything the AI wrote is orange.** So are consent boxes and anything Auto Job isn't sure about.
+- **You submit.** The final Submit needs two clicks from you. Only answers you reviewed and submitted are remembered.
+- **CAPTCHAs and passwords stay with you.** Password fields are never filled, and CAPTCHAs are never solved.
 
-## Limits
+## Privacy and security
 
-- **CAPTCHAs and passwords** need you. Email codes and links are handled once Gmail is connected.
-- **Unusual widgets:** some custom date pickers and drag-to-rank questions may need a click from you. They are listed as "pick it yourself".
-- **LinkedIn / Indeed terms of service** restrict automation. This tool fills the form for you to review, and never submits unless you press Submit.
+- **Your data stays on your Mac.** The `data/` folder holds your profile, documents, tracker and every generated PDF. It's in `.gitignore` and never leaves your machine, except as the text sent to the AI provider you choose. Use Ollama to keep even that local.
+- **Secrets live in `server/.env`** (git-ignored): your AI key and Gmail app password. The panel never sees them.
+- **Localhost only:** the server binds to `127.0.0.1` and accepts requests only from the extension and localhost pages. Other websites can't write to it.
+- **Gmail is read-only** except for **Apply by email**, which sends only after your two clicks. Revoke access any time by deleting the App Password.
+- **Verification links** are opened only on the job site's domain, the company's domain or a known ATS.
+
+## Configuration
+
+All settings live in `server/.env` (copy `server/.env.example`):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `PORT` | `8787` | Server port (change it in Profile → Server too) |
+| `LLM_PROVIDER` | `ollama` | `gemini`, `ollama`, `openai` (any OpenAI-compatible API) or `anthropic` |
+| `GEMINI_API_KEY` | — | Your Gemini key |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Fast model for form answers |
+| `GEMINI_HEAVY_MODEL` | `gemini-3.5-flash` | Resume import, tailoring and cover letters |
+| `GEMINI_FALLBACK_MODELS` | several | Tried in turn when a model is out of quota or overloaded |
+| `OLLAMA_MODEL` / `OLLAMA_URL` | `qwen3.5:9b` / `localhost:11434` | Local model, also the automatic fallback when Gemini fails |
+| `OLLAMA_FALLBACK` | on | Set to `off` to disable the Ollama fallback |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` / `OPENAI_API_KEY` | — | Any OpenAI-compatible provider (OpenAI, Groq, LM Studio…) |
+| `ANTHROPIC_MODEL` / `ANTHROPIC_API_KEY` | — | Claude |
+| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | — | Gmail for codes, verification links and Apply by email |
+
+**Gemini free tier:** about 20 requests per model per day. The server rotates through your fallback models, rests the ones that are out of quota until the daily reset, and falls back to Ollama if all are out. The panel's status pill shows **AI quota low** or **local AI (Gemini quota out)**. One application uses roughly 3–6 requests.
+
+## Server API
+
+All endpoints are on `http://localhost:8787` and accept JSON.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | Status: model, Gmail, profile, quota |
+| POST | `/api/profile/import` | Import and merge resume files (multipart `resume`) |
+| GET / PUT | `/api/profile` | Read or save your profile |
+| POST | `/api/profile/skills` | Add skills you confirmed (+ chips) |
+| POST | `/api/tailor` | Tailored resume PDF + keyword coverage for a job |
+| POST | `/api/cover-letter` | Cover letter text + PDF for a job |
+| POST | `/api/answer` | Values for a list of form fields (with optional site errors) |
+| POST | `/api/answer-bank` | Remember answers from a submitted form |
+| GET / POST / DELETE | `/api/documents[/:kind]` | List, upload, fetch or remove documents |
+| POST | `/api/email/draft` · `/api/email/send` | Draft and send an application email |
+| GET | `/api/email/check` · `/api/mail/status` | Gmail connection status |
+| GET | `/api/otp` | Wait for a one-time code or verification link |
+| GET | `/api/hackathons` | Open hackathons from 8 platforms |
+| GET / POST / PATCH / DELETE | `/api/applications[/:id]` | The tracker |
+
+## Project structure
+
+```
+Auto-Job/
+├── extension/                 Chrome MV3 extension
+│   ├── manifest.json
+│   ├── background.js          opens the panel as side panel, popup, tab or window
+│   ├── launcher.html/.js      "how should it open?" chooser
+│   ├── sidepanel.html/.css/.js  the panel: Apply, Jobs, Hacks, Tracker, Profile
+│   ├── content.js             the form engine: scan, fill, verify, navigate
+│   └── scripts/               Wellfound console script
+├── server/
+│   ├── src/
+│   │   ├── index.js           REST API, origin check
+│   │   ├── answer.js          profile rules, quick fixes, AI batching
+│   │   ├── tailor.js          resume tailoring, skill groups, filler removal
+│   │   ├── keywords.js        job keyword extraction and coverage
+│   │   ├── pdf.js             one-page resume and cover letter PDFs
+│   │   ├── prompts.js         every AI prompt
+│   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude, quota handling
+│   │   ├── mail.js            Gmail IMAP / SMTP
+│   │   ├── hackathons.js      8 hackathon platforms
+│   │   └── store.js           profile, documents, tracker on disk
+│   ├── test/                  test forms that copy real portals
+│   └── .env.example
+├── docs/screenshots/          the images in this README (made-up demo profile)
+└── data/                      your data, git-ignored, created on first run
+```
 
 ## Testing without a real job
 
-With the server running, open one of these in Chrome and use the side panel on it:
+With the server running, open any of these and use the panel on it:
 
-- http://localhost:8787/test/form.html: a simple one-page form.
-- http://localhost:8787/test/hard.html: a 4-step form with custom widgets, uploads and validation.
+| Page | What it exercises |
+|---|---|
+| `/test/form.html` | A simple one-page form |
+| `/test/hard.html` | A 4-step form with custom widgets, uploads and validation |
+| `/test/tricky.html` | Workday-style lists, lazy scrolling, validation errors |
+| `/test/recruitcrm.html` | "Search & Select" dropdowns and agreement questions |
+| `/test/sections.html` | Repeating sections, tag inputs, staged questions |
+| `/test/pyjama.html` | Link rows with "+", a resume upload that wipes the form |
+| `/test/fixcard.html` | Imported cards flagged "Fields to fix" |
+| `/test/langs.html` | Add Language editors and Link 1 / 2 / 3 boxes |
+| `/test/workday.html` · `/test/wdexp.html` · `/test/wdstate.html` | Workday prompts, split dates, values Workday ignores unless typed |
+| `/test/juspay.html` | Phone with a separate +91 box, CAPTCHA hand-off |
+| `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
+| `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |
+
+All paths are on `http://localhost:8787`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Panel says **server offline** | Run `npm start` in `server/`. If it says the port is in use, an earlier server is still running, which is fine. |
+| Many fields left empty, status pill amber | The Gemini daily quota is used up. Start Ollama (`ollama serve`) for the automatic local fallback, wait for the reset, or add billing to the key. |
+| Arc: clicking the icon does nothing visible | Use the popup, then **⧉ → Open in a window** or **Open beside this page**. Reload the extension after updating. |
+| A site shows "required" next to filled boxes | Reload the extension (0.8.8+) and press Fill again. Auto Job retypes boxes the site still calls empty. |
+| A dropdown says "no option matches" | Pick it yourself. The panel lists the field and the value it tried. |
+| Old values stay after a fix | Turn off **Only empty**, or clear the field, then press Fill again. |
+| Changes to the code don't show | Reload the extension at `chrome://extensions` (or `arc://extensions`) and restart the server. |
+
+## Limits
+
+- **CAPTCHAs and passwords** are yours to type. Auto Job highlights CAPTCHAs and never fills password fields.
+- **Unusual widgets** (drag-to-rank, canvas date pickers) may need a click. They're listed as "pick it yourself".
+- **LinkedIn / Indeed terms** restrict automation. Auto Job fills for your review and never submits on its own.
+- **The AI can be wrong** on open-ended questions. That's why those answers are orange: read them before you submit.
+
+---
+
+<div align="center">
+
+Built by **[Ayush Upadhyay](https://github.com/batmandevx)**. If Auto Job saves you an evening of applications, a ⭐ helps others find it.
+
+</div>

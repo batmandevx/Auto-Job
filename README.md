@@ -22,6 +22,8 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 
 - [Why Auto Job](#why-auto-job)
 - [What it does](#what-it-does)
+- [Runs on your own laptop, safe by design](#runs-on-your-own-laptop-safe-by-design)
+- [Reads OTPs from your Gmail and clicks verify links](#reads-otps-from-your-gmail-and-clicks-verify-links)
 - [Tour](#tour)
 - [How it works](#how-it-works)
 - [Architecture](#architecture)
@@ -80,12 +82,82 @@ Auto Job does the repetitive part and leaves the decisions to you:
   - fields inside iframes and shadow DOM
 - **📎 Uploads documents.** Resume, cover letter, and also photo, signature, marksheets, ID / address proof and PAN when a form asks for them.
 - **🔁 Works through every page.** It clicks *Next*, waits for questions that only appear after an answer, fixes validation errors and retries.
-- **🔐 Handles email verification.** It reads one-time codes (including 6-box inputs) and "verify your email" links from Gmail, read-only.
+- **🔐 Reads OTPs from your Gmail and clicks verify links, automatically.** When a portal says "enter the code we emailed you", Auto Job finds that email, types the code (including 6 separate boxes) and carries on. When it says "check your inbox", it opens the verification link and fills the next page. Inbox access is read-only.
 - **📨 Applies by email.** When a post just says "send your CV to hr@…", it drafts the email with the files attached and sends it from your Gmail after you confirm.
 - **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list, and applies to the ones you tick, one after another.
 - **🏆 Lists hackathons** from 8 platforms in one searchable list.
 - **📊 Tracks your applications** from *To apply* to *Offer*.
 - **🛑 Waits for you at the end.** You review the highlighted fields and press Submit twice.
+- **🏠 Runs entirely on your laptop.** The server is a small program on your own machine. Your profile, documents and passwords never go to any Auto Job server, because there isn't one.
+
+## Runs on your own laptop, safe by design
+
+Auto Job isn't a website or a cloud service you hand your data to. It's an extension plus a small server **that runs on your own computer**, so you own all of it:
+
+```mermaid
+flowchart LR
+    subgraph Laptop["🏠 Your laptop: nothing leaves without you"]
+        direction TB
+        EXT["Auto Job extension<br/>in your own browser,<br/>with your own logins"]
+        SRV["Auto Job server<br/>127.0.0.1:8787<br/>(unreachable from the internet)"]
+        DATA[("Your data folder<br/>profile · ID documents<br/>resumes · tracker")]
+        ENV[("server/.env<br/>AI key · Gmail app password")]
+        EXT <--> SRV
+        SRV --- DATA
+        SRV --- ENV
+    end
+    SRV -- "only the text needed<br/>to answer a question" --> AI["AI model you choose<br/>(or Ollama: stays on the laptop)"]
+    SRV -- "read-only: codes and links" --> GM["Your Gmail"]
+```
+
+| Concern | How Auto Job handles it |
+|---|---|
+| **Where is my data?** | In `data/` on your laptop: profile, Aadhaar / PAN / marksheets, resumes, tracker. There's no Auto Job account and no Auto Job cloud. |
+| **Who can reach the server?** | Only your own machine. It listens on `127.0.0.1` and refuses requests from any website other than the extension and localhost, so a page you visit can't read your profile. |
+| **My API key and Gmail password?** | Kept in `server/.env` on your laptop, git-ignored, and never sent to the browser or any web page. |
+| **What does the AI see?** | Only what it needs: the job description and the questions it has to answer. Choose **Ollama** and even that never leaves your laptop. |
+| **Gmail access?** | An App Password you can revoke in one click. Auto Job reads codes and verification links and never deletes or moves mail. It sends only for **Apply by email**, after you press Send twice. |
+| **Could it apply to something by mistake?** | No. It never presses the final Submit: you do, twice. CAPTCHAs and passwords are always left to you. |
+| **Do I need to trust a third party?** | No. The code is all here and open, it runs on your machine, and your logins stay in your own browser. |
+
+## Reads OTPs from your Gmail and clicks verify links
+
+Many portals stop you partway with *"Enter the 6-digit code we emailed you"* or *"Check your inbox to continue"*. Auto Job handles both without you opening Gmail:
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/otp-code.png" alt="A 6-box verification code typed in automatically, the panel showing the code and the email it came from" /><br><b>One-time code</b>: Auto Job waits for the email (up to 2 minutes), types <code>482916</code> into all six boxes and checks each digit took. The panel shows the code large, with a Copy button and the email it came from.</td>
+<td width="50%"><img src="docs/screenshots/verify-link.png" alt="After a verification link was opened, the next page is filled" /><br><b>Verification link</b>: on a "check your inbox" page it finds the link in Gmail, opens it (only on the job site's, company's or a known ATS's domain), then fills the page that follows.</td>
+</tr>
+</table>
+
+<sub>For these two screenshots, the inbox reply was simulated so no real email account appears. The page handling, typing and link opening are the real extension.</sub>
+
+```mermaid
+sequenceDiagram
+    participant Page as Job portal
+    participant Ext as Auto Job (in your browser)
+    participant Srv as Auto Job server (your laptop)
+    participant Mail as Your Gmail (read-only)
+    Page->>Ext: "Enter the code we emailed you" / "Check your inbox"
+    Ext->>Srv: GET /api/otp?want=code or link&since=start of this application
+    loop every few seconds, up to 2 minutes
+        Srv->>Mail: newest emails since the application started (checks every 6 s)
+    end
+    Mail-->>Srv: "Your verification code is 482916" / "Confirm your email" link
+    Srv-->>Ext: code (or link) + subject + sender
+    alt one-time code
+        Ext->>Page: type the code (6 boxes or 1), check every box
+    else verification link on a trusted domain
+        Ext->>Page: open the link in the same tab, then fill the next page
+    else link on another domain
+        Ext-->>Ext: show it to you, don't open it
+    end
+```
+
+- **Only fresh mail.** It looks only at emails that arrived after you started this application, preferring senders that match the job site or company, so an old code is never reused.
+- **Trusted links only.** A link opens automatically only on the job site's own domain, the company's domain or a known applicant-tracking system. Anything else is shown to you as a link, for you to judge.
+- **Setup takes two minutes.** Turn on 2-Step Verification, create an App Password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), put it in `server/.env` with your Gmail address, and restart the server. The panel header shows **gmail ✓**.
 
 ## Tour
 

@@ -386,7 +386,10 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 3. Filter titles, tick the jobs you want (**Select all shown** helps), then press **Start applying**. Auto Job opens each job, applies, fills and waits for your review. **Skip this job** moves on.
 4. **☆ Save to tracker** saves ticked jobs as *To apply*.
 5. **+ Save board** keeps any link as a one-tap board.
-6. **Copy Wellfound script:** copies a console script for Wellfound. Note that this script submits without review.
+6. **Copy Wellfound script:** copies a console script that applies to Wellfound jobs with a personal message. Unlike the rest of Auto Job, **this script submits by itself**, so try it first with `dryRun: true`.
+   - **Your details:** the public script holds only placeholders, in a clearly marked **YOUR DETAILS** block at the top (name, one-line intro, highlights, links). The Copy button fills that block from your Auto Job profile. Or edit it yourself: save your copy as `extension/scripts/wellfound-autoapply.local.js`. *.local.js files are git-ignored, so your details are never committed, and the Copy button always prefers that file.
+   - **Settings** (the `CONFIG` block): `dryRun` (fill, don't submit), `maxApplications` per run (default 25), `maxAgeDays` (skip older posts, default 7), `skipTitles` (e.g. `['senior', 'manager']`).
+   - **Safety:** it won't run while placeholders are still there. Type `window.wellfoundStop = true` in the console to stop it. At the end it prints a table of every job it applied to.
 
 ### Hacks tab
 
@@ -596,7 +599,7 @@ Auto-Job/
 │   ├── launcher.html/.js      "how should it open?" chooser
 │   ├── sidepanel.html/.css/.js  the panel: Apply, Jobs, Hacks, Tracker, Profile
 │   ├── content.js             the form engine: scan, fill, verify, navigate
-│   └── scripts/               Wellfound console script
+│   └── scripts/               Wellfound console script (template; your *.local.js copy stays private)
 ├── server/
 │   ├── src/
 │   │   ├── index.js           REST API, origin check

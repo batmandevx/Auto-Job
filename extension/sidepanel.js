@@ -1499,13 +1499,36 @@ on('#skipJob', nextInQueue);
 
 // ---------- scripts ----------
 const loadScript = async (name) => (await fetch(chrome.runtime.getURL(`scripts/${name}`))).text();
-on('#copyWellfound', async () => {
+// Your own copy (scripts/wellfound-autoapply.local.js, never committed) wins. Otherwise the public template,
+// with its YOUR DETAILS block filled in from your Auto Job profile.
+async function wellfoundScript() {
+  const own = await fetch(chrome.runtime.getURL('scripts/wellfound-autoapply.local.js')).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+  if (own.trim()) return { code: own, source: 'your own copy' };
   const code = await loadScript('wellfound-autoapply.js');
+  const p = state.profile;
+  if (!p?.name) return { code, source: 'template: fill in YOUR DETAILS before running it' };
+  const exp = p.experience || [];
+  const me = {
+    name: p.name,
+    pitch: (p.headline ? `a ${p.headline.split('|')[0].trim()}` : 'an engineer') + (p.education?.[0]?.degree ? ` (${[p.education[0].degree, p.education[0].field].filter(Boolean).join(' ').replace(/\s*\(.*?\)/g, '')} at ${String(p.education[0].school || '').split(',')[0]})` : '') + ' who loves building and shipping products from 0 to 1',
+    highlights: [
+      ...exp.slice(0, 2).map((e) => `${e.title} @ ${String(e.company).split(',')[0]}: ${String(e.bullets?.[0] || '').replace(/\.$/, '')}`),
+      p.achievements?.[0],
+      (p.skills || []).flatMap((g) => g.items).slice(0, 10).join(', '),
+    ].filter(Boolean).map((x) => String(x).slice(0, 220)),
+    closing: "I thrive in fast-paced startup teams where you own the problem from architecture to deployment, and I'd love to contribute to what you're building.",
+    links: Object.fromEntries([['Portfolio', p.links?.portfolio], ['GitHub', p.links?.github], ['LinkedIn', p.links?.linkedin]].filter(([, u]) => u)),
+  };
+  const filled = code.replace(/const ME = \{[\s\S]*?\n  \};/, `const ME = ${JSON.stringify(me, null, 2).replace(/\n/g, '\n  ')};`);
+  return { code: filled, source: 'template, filled from your profile' };
+}
+on('#copyWellfound', async () => {
+  const { code, source } = await wellfoundScript();
   await navigator.clipboard.writeText(code);
   const btn = $('#copyWellfound');
   btn.classList.add('copied');
   btn.querySelector('span').textContent = 'Copied ✓';
-  toast('Script copied. Paste it into the Wellfound console.');
+  toast(`Script copied (${source}). Paste it into the Wellfound console.`);
   setTimeout(() => {
     btn.classList.remove('copied');
     btn.querySelector('span').textContent = 'Copy script';
@@ -1513,7 +1536,7 @@ on('#copyWellfound', async () => {
 });
 $('#viewWellfound').addEventListener('click', async () => {
   const pre = $('#wellfoundCode');
-  if (pre.hidden && !pre.textContent) pre.textContent = await loadScript('wellfound-autoapply.js');
+  if (pre.hidden && !pre.textContent) pre.textContent = (await wellfoundScript()).code;
   pre.hidden = !pre.hidden;
   $('#viewWellfound').textContent = pre.hidden ? 'View' : 'Hide';
 });

@@ -15,3 +15,6 @@ node_modules/
 .DS_Store
 .kilo/
 .kilocode/
+
+# Your own Wellfound script with your details (the Copy button prefers it). Never committed.
+extension/scripts/*.local.js

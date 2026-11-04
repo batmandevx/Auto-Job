@@ -1884,7 +1884,12 @@ chrome.runtime.sendMessage({ type: 'panel-alive', mode: PANEL_MODE }).catch(() =
 document.documentElement.dataset.mode = PANEL_MODE;
 
 // ---------- pop out (tab / window / side panel) ----------
-async function popOut(how) {
+// Chrome only opens the side panel inside the click itself: no awaiting before chrome.sidePanel.open,
+// so the window id is looked up when the panel loads, and the click handler calls open() first thing.
+let thisWindowId = null;
+chrome.windows?.getCurrent?.().then((w) => (thisWindowId = w.id)).catch(() => {});
+const openSidePanelNow = () => (typeof chrome.sidePanel?.open === 'function' && thisWindowId != null ? chrome.sidePanel.open({ windowId: thisWindowId }) : null);
+async function popOut(how, opening = null) {
   const page = await browserTab().catch(() => null);
   if (how === 'tab') {
     const base = chrome.runtime.getURL('sidepanel.html');
@@ -1896,7 +1901,13 @@ async function popOut(how) {
     if (!r?.ok) return popOut('tab');
   } else if (how === 'sidepanel') {
     try {
-      await chrome.sidePanel.open({ windowId: page?.windowId });
+      try {
+        await (opening || chrome.sidePanel.open({ windowId: page?.windowId }));
+      } catch (e) {
+        // Refused (not a browser limit): keep offering the dock, and say why.
+        toast(`Couldn't open the side panel: ${e.message}`, true);
+        return;
+      }
       const since = Date.now();
       let ok = false;
       for (let i = 0; i < 8 && !ok; i++) {
@@ -1921,7 +1932,7 @@ $('#popoutBtn').addEventListener('click', (e) => {
 document.addEventListener('click', () => ($('#popoutMenu').hidden = true));
 $('#popoutMenu').addEventListener('click', (e) => {
   const how = e.target.closest('[data-open]')?.dataset.open;
-  if (how) popOut(how).catch((err) => toast(err.message, true));
+  if (how) popOut(how, how === 'sidepanel' ? openSidePanelNow() : null).catch((err) => toast(err.message, true));
 });
 if (typeof chrome.sidePanel?.open !== 'function' || PANEL_MODE === 'sidepanel') $('#openSide').hidden = true;
 $('#popoutNow').addEventListener('click', () => popOut('window'));
@@ -1929,7 +1940,7 @@ $('#popoutNow').addEventListener('click', () => popOut('window'));
 if (PANEL_MODE === 'popup' && typeof chrome.sidePanel?.open === 'function') {
   chrome.storage.local.get('sidePanelUnsupported').then(({ sidePanelUnsupported }) => ($('#dockNote').hidden = !!sidePanelUnsupported));
 }
-$('#dockNow').addEventListener('click', () => popOut('sidepanel').catch((err) => toast(err.message, true)));
+$('#dockNow').addEventListener('click', () => popOut('sidepanel', openSidePanelNow()).catch((err) => toast(err.message, true)));
 // Long runs need the panel to stay open; a toolbar popup can close when you click the page.
 const notePopup = () => PANEL_MODE === 'popup' && ($('#popupNote').hidden = false);
 for (const id of ['#runAll', '#startQueue', '#continue', '#scanAll']) $(id).addEventListener('click', notePopup, true);

@@ -119,11 +119,20 @@ chrome.runtime.onInstalled.addListener(() => {
   applyIconMode();
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'open-window', title: 'Open Auto Job in a window', contexts: ['action'] });
+    if (typeof chrome.sidePanel?.open === 'function') chrome.contextMenus.create({ id: 'open-sidebar', title: 'Open Auto Job as sidebar', contexts: ['action'] });
   });
 });
-chrome.contextMenus.onClicked.addListener((info) => {
+// Menu clicks and shortcuts count as your own action, so the side panel can open from here.
+// open() is called first thing: Chrome refuses it once anything has been awaited.
+function openSidebar(windowId) {
+  if (typeof chrome.sidePanel?.open !== 'function' || windowId == null) return openPanelWindow();
+  chrome.sidePanel.open({ windowId }).catch(() => openPanelWindow());
+}
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'open-window') openPanelWindow();
+  if (info.menuItemId === 'open-sidebar') openSidebar(tab?.windowId);
 });
-chrome.commands.onCommand.addListener((cmd) => {
+chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-window') openPanelWindow();
+  if (cmd === 'open-sidebar') openSidebar(tab?.windowId);
 });

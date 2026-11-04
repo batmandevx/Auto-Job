@@ -1888,7 +1888,11 @@ document.documentElement.dataset.mode = PANEL_MODE;
 // so the window id is looked up when the panel loads, and the click handler calls open() first thing.
 let thisWindowId = null;
 chrome.windows?.getCurrent?.().then((w) => (thisWindowId = w.id)).catch(() => {});
-const openSidePanelNow = () => (typeof chrome.sidePanel?.open === 'function' && thisWindowId != null ? chrome.sidePanel.open({ windowId: thisWindowId }) : null);
+const openSidePanelNow = () => {
+  if (typeof chrome.sidePanel?.open !== 'function') return null;
+  if (thisWindowId == null) return Promise.reject(new Error('the window was not ready yet, try again'));
+  return chrome.sidePanel.open({ windowId: thisWindowId });
+};
 async function popOut(how, opening = null) {
   const page = await browserTab().catch(() => null);
   if (how === 'tab') {
@@ -1904,8 +1908,10 @@ async function popOut(how, opening = null) {
       try {
         await (opening || chrome.sidePanel.open({ windowId: page?.windowId }));
       } catch (e) {
-        // Refused (not a browser limit): keep offering the dock, and say why.
+        // Refused (not a browser limit): keep offering the dock, and say why where you can see it.
         toast(`Couldn't open the side panel: ${e.message}`, true);
+        const note = $('#dockError');
+        if (note) note.textContent = `Chrome said: ${e.message}. Right-click the Auto Job icon → "Open Auto Job as sidebar", or press Alt+Shift+S.`;
         return;
       }
       const since = Date.now();

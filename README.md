@@ -385,7 +385,7 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 
 **Colours on the page:** green = filled from your profile or memory · orange = AI-written, consent box or "please check" · red = needs you.
 
-**Chrome, Edge, Brave:** the first click opens a popup with **▤ Dock as sidebar**. Press it once, and from then on the icon opens Auto Job as a real sidebar that stays open while you work.
+**Chrome, Edge, Brave:** the first click opens a popup with **▤ Dock as sidebar**. Press it once, and from then on the icon opens Auto Job as a real sidebar that stays open while you work. You can also right-click the icon → **Open Auto Job as sidebar**, or press **Alt+Shift+S**.
 
 **Opening the panel in Arc:** clicking the icon opens Auto Job as a popup. For long runs press **⧉** → **Open beside this page** (use Arc Split View) or **Open in a window**. It keeps working on the last web page you used. In Chrome, **⧉ → Open side panel** docks it.
 

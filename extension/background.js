@@ -40,7 +40,13 @@ async function sidePanelIsOpen(since) {
 // Messages from the panel and the launcher popup.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'panel-alive') {
-    if (msg.mode === 'sidepanel') chrome.storage.session.set({ panelAliveAt: Date.now() });
+    if (msg.mode === 'sidepanel') {
+      chrome.storage.session.set({ panelAliveAt: Date.now() });
+      // The real side panel just loaded, so this browser supports it (Chrome, Edge, Brave; never Arc):
+      // from now on the toolbar icon opens the sidebar instead of the popup.
+      chrome.storage.local.set({ sidePanelWorks: true });
+      useSidePanelForIcon();
+    }
     return false;
   }
   if (msg?.type === 'side-panel-open?') {
@@ -88,8 +94,21 @@ async function openPanel(tab) {
 // Listeners are registered synchronously at load: an MV3 worker woken by a click only sees those.
 chrome.action.onClicked.addListener((tab) => openPanel(tab));
 
-// We handle the click ourselves (not openPanelOnActionClick), otherwise Arc swallows it and nothing opens.
-if (typeof chrome.sidePanel?.setPanelBehavior === 'function') chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+// Toolbar icon: the popup by default (the one thing Arc shows), the real side panel once we know it works here.
+// The choice is applied every time the worker starts, since action settings don't survive a browser restart.
+async function useSidePanelForIcon() {
+  await chrome.action.setPopup({ popup: '' }).catch(() => {});
+  await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
+}
+async function applyIconMode() {
+  const { sidePanelWorks } = await chrome.storage.local.get('sidePanelWorks');
+  if (sidePanelWorks && typeof chrome.sidePanel?.setPanelBehavior === 'function') return useSidePanelForIcon();
+  // Popup mode: we handle side panel opening ourselves, otherwise Arc swallows the click and nothing opens.
+  await chrome.action.setPopup({ popup: 'sidepanel.html' }).catch(() => {});
+  await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
+}
+applyIconMode();
+chrome.runtime.onStartup.addListener(applyIconMode);
 
 chrome.windows.onRemoved.addListener(async (id) => {
   if (id === (await getWin())) setWin(null);
@@ -97,6 +116,7 @@ chrome.windows.onRemoved.addListener(async (id) => {
 
 // Menus persist across restarts, so they only need creating on install / update.
 chrome.runtime.onInstalled.addListener(() => {
+  applyIconMode();
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'open-window', title: 'Open Auto Job in a window', contexts: ['action'] });
   });

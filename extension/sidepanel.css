@@ -505,3 +505,8 @@ html[data-mode="popup"] .brand-sub { display: none; }
 .research .chip { display: inline-block; padding: 2px 9px; margin: 2px 2px 0 0; border-radius: 999px; background: var(--soft, rgba(127,127,127,.12)); border: 1px solid var(--line, rgba(127,127,127,.25)); font-size: 12px; }
 .research .good-text { color: #16a34a; } .research .warn-text { color: #d97706; } .research .bad-text { color: #dc2626; }
 .research .sources a { word-break: break-word; }
+
+/* "Dock as sidebar" offer in the toolbar popup (Chrome, Edge, Brave) */
+.dock-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dock-note[hidden] { display: none; }
+.dock-note small { flex-basis: 100%; opacity: .7; }

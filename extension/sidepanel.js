@@ -1905,6 +1905,9 @@ async function popOut(how) {
       }
       if (!ok) throw new Error('no side panel');
     } catch {
+      // Arc and other browsers without a visible side panel: stop offering to dock.
+      chrome.storage.local.set({ sidePanelUnsupported: true });
+      $('#dockNote').hidden = true;
       toast("This browser doesn't show side panels: opening a tab instead");
       return popOut('tab');
     }
@@ -1922,6 +1925,11 @@ $('#popoutMenu').addEventListener('click', (e) => {
 });
 if (typeof chrome.sidePanel?.open !== 'function' || PANEL_MODE === 'sidepanel') $('#openSide').hidden = true;
 $('#popoutNow').addEventListener('click', () => popOut('window'));
+// Chrome / Edge / Brave: offer to dock as a real sidebar. Once it loads there, the icon opens the sidebar every time.
+if (PANEL_MODE === 'popup' && typeof chrome.sidePanel?.open === 'function') {
+  chrome.storage.local.get('sidePanelUnsupported').then(({ sidePanelUnsupported }) => ($('#dockNote').hidden = !!sidePanelUnsupported));
+}
+$('#dockNow').addEventListener('click', () => popOut('sidepanel').catch((err) => toast(err.message, true)));
 // Long runs need the panel to stay open; a toolbar popup can close when you click the page.
 const notePopup = () => PANEL_MODE === 'popup' && ($('#popupNote').hidden = false);
 for (const id of ['#runAll', '#startQueue', '#continue', '#scanAll']) $(id).addEventListener('click', notePopup, true);

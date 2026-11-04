@@ -45,7 +45,7 @@
           let doc = null;
           if (k === 'resume') doc = resume ||= await api('/api/tailor', job).then((r) => ({ base64: r.pdfBase64, filename: r.filename, mime: 'application/pdf' }));
           if (k === 'cover') doc = cover ||= await api('/api/cover-letter', job).then((r) => ({ base64: r.pdfBase64, filename: r.filename, mime: 'application/pdf' }));
-          if (k === 'photo' || k === 'signature') doc = await api(`/api/documents/${k}`);
+          if (k === 'photo' || k === 'signature') doc = await api(`/api/documents/${k}`).catch(() => null); // not saved: "no document", like the panel
           const r = doc ? jf.uploadFile(f.id, doc.base64, doc.filename, doc.mime) : { ok: false, reason: 'no document' };
           log(`  [upload ${k}] ${f.label.slice(0, 50)} -> ${r.ok ? doc.filename : r.reason}`);
         }

@@ -1,4 +1,4 @@
-// Toolbar icon → launcher popup (launcher.html), which every Chromium browser shows, Arc included.
+// Toolbar icon: the real side panel in Chrome / Edge / Brave, the panel as a popup in Arc (which every Chromium browser shows).
 // From there Auto Job opens as a tab, a window or (where it really works) the side panel.
 // Arc exposes chrome.sidePanel but never displays it, so the API's presence proves nothing:
 // we ask for the panel, check it actually loaded, and fall back to the window if it didn't.
@@ -37,7 +37,7 @@ async function sidePanelIsOpen(since) {
   return ((await chrome.storage.session.get('panelAliveAt')).panelAliveAt || 0) >= since;
 }
 
-// Messages from the panel and the launcher popup.
+// Messages from the panel (side panel, popup, tab or window).
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'panel-alive') {
     if (msg.mode === 'sidepanel') {

@@ -508,7 +508,7 @@ async function fillPage(pageNo = 1) {
     for (const f of fields) {
       const v = values[f.id];
       const status = results[f.id];
-      const empty = v === undefined || v === '' || (Array.isArray(v) && !v.length);
+      const empty = v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length); // null: left empty on purpose
       if (empty && f.required) missingRequired.push(f.label);
       if (!empty && status && status !== 'filled') failed.push({ key: f.id, label: f.label, value: Array.isArray(v) ? v.join(', ') : String(v), error: status, required: f.required });
       const tag =

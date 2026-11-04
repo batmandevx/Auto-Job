@@ -82,7 +82,8 @@ const RULES = [
   [/(were|are|have) you (ever |currently )?(been |worked as )?(a |an )?(former )?government (employee|official|servant)|ever (a|been a|worked as a) government|civil service or military/i, (p, f) => (/family|relative|spouse|parent|sibling/i.test(f.label) ? undefined : 'No')],
   // Conflict-of-interest questions are facts about you, never guessed: no family at the company, never worked for it
   // (unless it is in your experience), happy to work from the posted location.
-  [/family|relative|related to|spouse|in-law/i, (p, f) => (/\?|^do you|^are you|^is any/i.test(f.label) && /relationship|related|relative|member|employ|board|director|reporting/i.test(f.label) ? 'No' : undefined)],
+  // Only relationship *questions* ("Do you have any relatives working here?"), never "Family name" or "Spouse name".
+  [/(family|relative|spouse|in-law|related to).{0,240}(relationship|related|relatives?|member|employ|work(s|ing)?|board|director|reporting)|(relationship|related|relatives?).{0,120}(family|employee|board|director|reporting|work(s|ing)? (at|for|in))/i, () => 'No'],
   [/(currently|previously|in the past|ever).{0,60}(worked|employed|been an? (employee|contractor)).{0,80}(consult|affiliat|subsidiar|project|this company|for us|with us|any of)/i, (p, f, job) => (worksHere(p, job) ? 'Yes' : 'No')],
   // Work authorisation: you're an Indian citizen, so Yes for India, and No for other countries
   // (the answers say you hold no visa for them).
@@ -90,7 +91,7 @@ const RULES = [
   [/(are you )?currently (employed|working)(\?|$)|current employment status/i, (p) => yesNo(p.answers.currentlyEmployed)],
   [/willing to (work|commute).{0,30}(location|office|site|city)|work from the location/i, () => 'Yes'],
   [/first\s*name|given\s*name|fname|forename/i, first],
-  [/middle\s*name/i, () => ''],
+  [/middle\s*name/i, (p) => p.personal?.middleName || null], // usually none: left empty on purpose, not asked of the AI
   [/last\s*name|surname|family\s*name|lname/i, last],
   [/mother'?s?\s*(maiden\s*)?name/i, (p) => p.personal.motherName],
   [/father'?s?\s*name|parent.*name|guardian.*name/i, (p) => p.personal.fatherName],
@@ -135,7 +136,7 @@ const RULES = [
   // Joining time: a number of days when the question asks in days or the box is numeric.
   [/how soon can you join|notice\s*period|joining\s*(time|period|date)|days to join|can you join|when can you (start|join)/i, (p, f) => (numericField(f) || /\bdays?\b/i.test(f.label) ? p.answers.noticeDays || '1' : p.answers.noticePeriod)],
   [/willing to relocate|open to relocat|relocation|ready to relocate/i, (p) => yesNo(p.answers.willingToRelocate)],
-  [/(total|overall|relevant)?\s*(years?|yrs)\s*(of)?\s*(work\s*)?experience|experience\s*\(?\s*(in\s*)?years|^experience$/i, (p) => (fresher(p) ? '0' : undefined)],
+  [/(total|overall|relevant)?\s*(years?|yrs)\s*(of)?\s*(work\s*)?experience|experience\s*\(?\s*(in\s*)?years|^experience$/i, (p) => (fresher(p) ? '0' : (String(p.answers?.yearsOfExperience || '').match(/\d+(\.\d+)?/) || [])[0])],
   [/(months?)\s*(of)?\s*(work\s*)?experience|experience.*months/i, (p) => (fresher(p) ? '0' : undefined)],
   [/current\s*(annual\s*)?(ctc|salary|compensation)/i, (p, f) => (numericField(f) || FULL_NUMBER.test(f.label) ? p.answers.currentSalaryAnnual : p.answers.currentSalary)],
   [/expected\s*(annual\s*|yearly\s*)?(ctc|salary|compensation|pay)|salary\s*expectation|desired\s*(salary|pay)|ctc.*expect/i, (p, f) => (numericField(f) || FULL_NUMBER.test(f.label) ? p.answers.expectedSalaryAnnual : p.answers.expectedSalary)],

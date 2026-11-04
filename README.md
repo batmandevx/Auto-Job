@@ -665,7 +665,6 @@ Auto-Job/
 ├── extension/                 Chrome MV3 extension
 │   ├── manifest.json
 │   ├── background.js          opens the panel as side panel, popup, tab or window
-│   ├── launcher.html/.js      "how should it open?" chooser
 │   ├── sidepanel.html/.css/.js  the panel: Apply, Jobs, Hacks, Tracker, Profile
 │   ├── content.js             the form engine: scan, fill, verify, navigate
 │   └── scripts/               Wellfound console script (template; your *.local.js copy stays private)
@@ -711,6 +710,14 @@ With the server running, open any of these and use the panel on it:
 
 All paths are on `http://localhost:8787`.
 
+**Run all of them at once** (headless Chrome, your running server, your profile):
+
+```bash
+cd server && npm test
+```
+
+It prints each page with how many fields were filled and any that weren't, and exits with an error if something regressed. Pass page names to run only some, for example `node test/run-all.mjs tricky workday`. `heal.html` and `strict.html` exercise the panel's self-healing and real typing, so test those from the side panel.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -718,7 +725,8 @@ All paths are on `http://localhost:8787`.
 | Panel says **server offline** | Run `npm start` in `server/`. If it says the port is in use, an earlier server is still running, which is fine. |
 | Many fields left empty, status pill amber | The Gemini daily quota is used up. Start Ollama (`ollama serve`) for the automatic local fallback, wait for the reset, or add billing to the key. |
 | Arc: clicking the icon does nothing visible | Use the popup, then **⧉ → Open in a window** or **Open beside this page**. Reload the extension after updating. |
-| A site shows "required" next to filled boxes | Reload the extension (0.8.8+) and press Fill again. Auto Job retypes boxes the site still calls empty. |
+| A site shows "required" next to filled boxes | Press Fill again: self-healing retypes boxes the site still calls empty, with real keystrokes if needed. Anything left is under 🙋 Needs you. |
+| Chrome opens a popup instead of the sidebar | Reload the extension once (it picks the sidebar when it starts). Or right-click the icon → **Open Auto Job as sidebar**, or press **Alt+Shift+S**. |
 | A dropdown says "no option matches" | Pick it yourself. The panel lists the field and the value it tried. |
 | Old values stay after a fix | Turn off **Only empty**, or clear the field, then press Fill again. |
 | A "started debugging this browser" bar appears | That's **⌨️ Real typing** retyping a box the site rejected. It goes away by itself; turn the switch off if you'd rather not see it. |

@@ -254,7 +254,7 @@
       press(el, 'Enter');
       const opts = await waitOptions(el, 2500);
       const i = optionTexts(opts).findIndex((t) => /^other\b/i.test(t));
-      if (i >= 0) return { opts, i };
+      if (i >= 0) return { opts, i, other: true };
     }
     return null;
   }
@@ -811,7 +811,11 @@
     // shorter / alternative names: "Vellore Institute of Technology, Chennai" -> "Vellore Institute of Technology" -> "VIT University".
     if (el.tagName === 'INPUT' && (el.getAttribute('data-automation-id') === 'searchBox' || el.closest('[data-automation-id="multiselectInputContainer"]'))) {
       const found = await searchWithEnter(el, v);
-      if (found) return pick(found.opts, found.i);
+      if (found) {
+        // "Other" when your school isn't listed, as the page says: a correct answer, but one for you to check.
+        if (found.other) el.dataset.jfOther = '1';
+        return pick(found.opts, found.i);
+      }
     }
 
     // 2) A search box inside the opened dropdown, or the field itself if it's an input.
@@ -856,7 +860,8 @@
       if (sameValue(readValue(el), v)) return 'filled';
     }
     close(el);
-    return opts.length ? `no option matches "${v}": pick it yourself` : `could not open the list for "${v}"`;
+    if (opts.length) return `no option matches "${v}": pick it yourself`;
+    return typeFirst || el.tagName === 'INPUT' ? `no match for "${v}" in this list: pick it yourself` : `could not open the list for "${v}"`;
   }
 
   async function fillOne(id, value, review) {
@@ -961,7 +966,7 @@
       }
       if (wasReadOnly) el.readOnly = true;
     }
-    if (status === 'filled') mark(el, review);
+    if (status === 'filled') mark(el, review || el.dataset.jfOther === '1');
     return status;
   }
 
@@ -1324,6 +1329,7 @@
     const box = findById(id);
     const part = box && dateSection(box);
     if (part) return !!datePart(value, part) && Number(actual) === Number(datePart(value, part));
+    if (box?.dataset.jfOther === '1' && /^other\b/i.test(String(actual).trim())) return true; // the "Other" fallback took
     const one = groups.get(id)?.length === 1 ? groups.get(id)[0] : !groups.get(id) && box && (box.type === 'checkbox' || /checkbox|switch/.test(box.getAttribute('role') || '')) ? box : null;
     if (typeof value === 'boolean' && one) return isChecked(one) === value; // a single checkbox: ticked or not
     if (typeof value === 'string' && dateParts(value) && sameDate(actual, value)) return true;

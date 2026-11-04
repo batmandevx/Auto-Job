@@ -795,21 +795,120 @@ async function visualCheck(tab, pageNo, { round = 1 } = {}) {
   let fixed = 0;
   if (errs.length) {
     progress(`Page ${pageNo}: 👁 fixing ${errs.length} field${errs.length > 1 ? 's' : ''} that look wrong`);
-    fixed = (await repairPage(tab, errs, [], pageNo, { trusted: $('#realTyping').checked, title: 'fixed after the visual check' })).fixed;
+    fixed = (await healPage(tab, errs, pageNo, 'healed after the visual check')).fixed;
   }
   return { problems: n, fixed, loose: loose.length };
 }
 const pick = (f) => (f ? { label: String(f.label).slice(0, 140), type: f.type, required: f.required, filled: f.filled } : {});
+// ---------- self-healing ----------
+// One ladder for every field that fails: normal fill → real typing (paste, then key by key) → real click →
+// a corrected value from the AI (with the site's message). After every step: read the field back and ask the
+// site whether it still objects. The strategy that worked is remembered per site and tried first next time.
+// What still fails goes to "Needs you" with what was tried and a "Show me" button.
+const STRATEGY_NAMES = { fill: 'normal fill', type: 'real typing', click: 'real click', ai: 'corrected value' };
+async function healMemory() {
+  return (await chrome.storage.local.get('healMemory')).healMemory || {};
+}
+const healKey = (label) => String(label).split('›').pop().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 60);
+async function rememberStrategy(host, label, strategy) {
+  const mem = await healMemory();
+  (mem[host] ||= {})[healKey(label)] = strategy;
+  mem[host]._type = mem[host]._type === undefined ? strategy : mem[host]._type; // the first fix on a site hints at its widgets
+  await chrome.storage.local.set({ healMemory: mem }).catch(() => {});
+}
+async function tryStrategy(tab, frameId, id, type, value, strategy) {
+  if (strategy === 'fill') return ((await callFrame(tab.id, frameId, 'fill', { [id]: value }, [])) || {})[id] || 'no result';
+  if (strategy === 'type') return realType(tab.id, frameId, id, String(value));
+  if (strategy === 'click') return realChoose(tab.id, frameId, id, type, value);
+  return 'unknown strategy';
+}
+// Fixed = shows the value AND the site has no error on it any more.
+async function healed(tab, frameId, id, value) {
+  await sleep(250);
+  const holds = await callFrame(tab.id, frameId, 'checkValue', id, value).catch(() => false);
+  const error = await callFrame(tab.id, frameId, 'fieldError', id).catch(() => '');
+  return { ok: !!holds && !error, error };
+}
+async function healField(tab, field, value, siteError, mem) {
+  const [frameId, id] = field.id.split(/:(.*)/).map((x, i) => (i ? x : Number(x)));
+  const real = $('#realTyping').checked;
+  let ladder = ['fill', ...(real && TYPABLE.includes(field.type) ? ['type'] : []), ...(real && CLICKABLE.includes(field.type) ? ['click'] : [])];
+  const known = mem[healKey(field.label)] || mem._type;
+  if (known && ladder.includes(known)) ladder = [known, ...ladder.filter((x) => x !== known)]; // what worked here before goes first
+  const tried = [];
+  let error = siteError;
+  let aiAt = -1;
+  for (const v of [value, null]) {
+    let val = v;
+    if (val === null) {
+      // Every way of entering it failed: ask for a corrected value, using the site's own message.
+      const fix = await api('/api/answer', { method: 'POST', body: { fields: [field], job: currentJob(), errors: { [field.id]: { message: error || 'the site did not accept this value', previous: value } } } }).catch(() => null);
+      val = fix?.values?.[field.id];
+      if (val === undefined || val === '' || String(val) === String(value)) break;
+      aiAt = tried.push({ strategy: 'ai', ok: false, note: String(val).slice(0, 40) }) - 1;
+    }
+    for (const strategy of ladder) {
+      const status = await tryStrategy(tab, frameId, id, field.type, val, strategy);
+      const check = await healed(tab, frameId, id, val);
+      tried.push({ strategy, ok: check.ok, note: check.ok ? '' : check.error || status });
+      if (check.ok) {
+        if (aiAt >= 0) tried[aiAt].ok = true;
+        return { ok: true, tried, value: val, strategy };
+      }
+      error = check.error || error;
+    }
+  }
+  return { ok: false, tried, value, error };
+}
+// Heal a list of failing fields ({ key, label, error, value }) on this page; returns what was fixed and what needs you.
+async function healPage(tab, failures, pageNo, title = 'self-healing') {
+  if (!failures.length) return { fixed: 0, unresolved: [] };
+  const scans = await callAll(tab.id, 'scan');
+  const meta = new Map();
+  for (const { frameId, result } of scans) for (const f of result.fields) meta.set(`${frameId}:${f.id}`, { ...f, id: `${frameId}:${f.id}`, label: f.label.slice(0, 300) });
+  const seen = new Set();
+  const targets = failures.filter((e) => !seen.has(e.key) && seen.add(e.key)).map((e) => ({ e, f: meta.get(e.key) })).filter(({ f }) => f && !['file', 'otp-split', 'captcha'].includes(f.type));
+  if (!targets.length) return { fixed: 0, unresolved: failures.map((e) => e.label) };
+  progress(`Page ${pageNo}: 🩺 healing ${targets.length} field${targets.length > 1 ? 's' : ''}…`);
+  // One answer request for all of them, with each field's own error.
+  const errors = Object.fromEntries(targets.map(({ e }) => [e.key, { message: e.error, previous: e.value }]));
+  const ans = await api('/api/answer', { method: 'POST', body: { fields: targets.map(({ f }) => f), job: currentJob(), errors } }).catch(() => ({ values: {} }));
+  const host = (() => { try { return new URL(tab.url).hostname; } catch { return ''; } })();
+  const mem = (await healMemory())[host] || {};
+  const rows = [];
+  const needs = [];
+  let fixed = 0;
+  for (const { e, f } of targets) {
+    const value = ans.values?.[f.id] ?? (e.value || undefined);
+    if (value === undefined || value === '') {
+      needs.push({ f, why: e.error || 'no value in your profile for this' , tried: [] });
+      continue;
+    }
+    const r = await healField(tab, f, value, e.error, mem);
+    const path = r.tried.map((t) => `${STRATEGY_NAMES[t.strategy]} ${t.ok ? '✓' : '✗'}`).join(' → ');
+    if (r.ok) {
+      fixed++;
+      await rememberStrategy(host, f.label, r.strategy);
+      rows.push(`<div class="item warn"><div class="q">🩺 ${esc(starless(f.label).slice(0, 90))} <span class="tag review">healed</span></div><div class="v">${esc(String(r.value).slice(0, 100))}<span class="src">${esc(path)}</span></div></div>`);
+    } else needs.push({ f, why: r.error || e.error || 'the site keeps rejecting it', tried: r.tried, path });
+  }
+  await debuggerOff(tab.id);
+  for (const n of needs) {
+    rows.push(`<div class="item bad"><div class="q">🙋 ${esc(starless(n.f.label).slice(0, 90))} <span class="tag err">needs you</span> <button class="btn ghost sm" data-jump="${esc(n.f.id)}">Show me</button></div>
+      <div class="v">${esc(String(n.why).slice(0, 140))}${n.path ? `<span class="src">tried: ${esc(n.path)}</span>` : ''}</div></div>`);
+  }
+  if (rows.length) {
+    state.log.push(`<div class="page">Page ${pageNo} · ${esc(title)}</div>${rows.join('')}`);
+    $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+  }
+  return { fixed, unresolved: needs.map((n) => n.f.label) };
+}
+
 // Last pass on a page: retype anything the site still flags with real keystrokes, look at it,
 // and if the look led to fixes, look once more to confirm they took.
 async function checkPage(tab, pageNo) {
-  if ($('#realTyping').checked) {
-    const stuck = (await collectFieldErrors(tab)).filter((e) => e.value);
-    if (stuck.length) {
-      progress(`Page ${pageNo}: ⌨️ retyping ${stuck.length} field${stuck.length > 1 ? 's' : ''} the site still rejects`);
-      await repairPage(tab, stuck, [], pageNo, { trusted: true, title: 'retyped' }).catch(() => {});
-    }
-  }
+  const stuck = await collectFieldErrors(tab);
+  if (stuck.length) await healPage(tab, stuck, pageNo, 'self-healing').catch(() => {});
   const first = await visualCheck(tab, pageNo).catch(() => ({ problems: 0, fixed: 0 }));
   if (!first.fixed) return first;
   return visualCheck(tab, pageNo, { round: 2 }).catch(() => first);
@@ -822,11 +921,14 @@ async function runPages() {
   for (let page = 1; page <= MAX_PAGES; page++) {
     const r = await fillPage(page);
     // Values a widget refused ("didn't stick", "no option matches"): ask again with that feedback.
-    if (r.failed.length) {
-      progress(`Page ${page}: ${r.failed.length} field${r.failed.length > 1 ? 's' : ''} didn't take, trying another way`);
-      const fx = await repairPage(tab, r.failed, [], page);
-      const stillBad = r.failed.filter((x) => x.required).length - fx.fixed;
-      if (stillBad > 0) r.missingRequired.push(...r.failed.filter((x) => x.required).map((x) => x.label).slice(0, stillBad));
+    // Fields that didn't take, plus fields the site objects to right after filling (some only complain once you leave the box).
+    const flagged = (await collectFieldErrors(tab).catch(() => [])).map((e) => ({ ...e, required: true }));
+    const failures = [...r.failed, ...flagged.filter((e) => !r.failed.some((x) => x.key === e.key))];
+    if (failures.length) {
+      progress(`Page ${page}: ${failures.length} field${failures.length > 1 ? 's' : ''} didn't take or ${failures.length > 1 ? 'are' : 'is'} rejected, healing`);
+      const fx = await healPage(tab, failures, page, 'self-healing');
+      const left = new Set(fx.unresolved);
+      r.missingRequired.push(...failures.filter((x) => x.required && left.has(x.label)).map((x) => x.label));
     }
     if (r.checkEmail && !r.next && !r.submit && !r.count) {
       if (!(await followEmailLink(tab))) return 'needs-input';
@@ -884,7 +986,7 @@ async function runPages() {
         continue;
       }
       progress(`Page ${page}: the site found ${errs.length || pageErrs.length} problem${(errs.length || pageErrs.length) > 1 ? 's' : ''}, fixing (attempt ${attempt}/3)`);
-      const fx = await repairPage(tab, errs, pageErrs, page, { trusted: attempt > 1 && $('#realTyping').checked });
+      const fx = attempt > 1 && errs.length ? await healPage(tab, errs, page, `self-healing (attempt ${attempt})`) : await repairPage(tab, errs, pageErrs, page);
       if (!fx.fixed) break;
       moved = await clickNextAndWait();
     }
@@ -1699,6 +1801,13 @@ $('#tailorOut').addEventListener('click', async (e) => {
 });
 
 $('#fillOut').addEventListener('click', async (e) => {
+  const jump = e.target.closest?.('[data-jump]')?.dataset.jump;
+  if (jump) {
+    const [frameId, id] = jump.split(/:(.*)/);
+    const tab = await activeTab().catch(() => null);
+    if (tab) await callFrame(tab.id, Number(frameId), 'jumpTo', id).catch(() => {});
+    return;
+  }
   const code = e.target.dataset.copy;
   if (!code) return;
   await navigator.clipboard.writeText(code).catch(() => {});

@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Self-healing test</title>
+  <style>body { font: 15px system-ui; max-width: 560px; margin: 24px auto; } label { display: block; margin-top: 16px; font-weight: 600; } input { padding: 8px; width: 100%; box-sizing: border-box; } .err { color: #c00; font-size: 13px; min-height: 16px; }</style>
+</head>
+<body>
+  <h2>Self-healing test</h2>
+  <p>First name is normal. PIN code only takes individual key presses. Phone rejects every value.</p>
+  <label for="fn">First name *</label><input id="fn" required />
+  <label for="pin">PIN code *</label><input id="pin" required aria-describedby="pin-e" /><div class="err" id="pin-e"></div>
+  <label for="ph">Phone *</label><input id="ph" required aria-describedby="ph-e" /><div class="err" id="ph-e"></div>
+  <script>
+    // PIN: pasted / script-set text is thrown away; key presses build the value (like masked inputs).
+    const pin = document.getElementById('pin'); let typed = '';
+    pin.addEventListener('keydown', (e) => {
+      if (/^\d$/.test(e.key)) typed += e.key;
+      if (e.key === 'Backspace') typed = typed.slice(0, -1);
+      if (e.key.length === 1 || e.key === 'Backspace') e.preventDefault();
+      pin.value = typed;
+    });
+    const check = () => { const ok = /^\d{6}$/.test(typed); pin.setAttribute('aria-invalid', String(!ok)); document.getElementById('pin-e').textContent = ok ? '' : 'Enter your 6-digit PIN code'; };
+    pin.addEventListener('input', () => { pin.value = typed; });
+    pin.addEventListener('blur', check);
+    // Phone: always refused (a backend that rejects the number).
+    const ph = document.getElementById('ph');
+    const refuse = () => { ph.setAttribute('aria-invalid', 'true'); document.getElementById('ph-e').textContent = 'This phone number is not accepted'; };
+    ph.addEventListener('blur', refuse); ph.addEventListener('change', refuse);
+    check(); refuse();
+    window.report = () => ({ first: document.getElementById('fn').value, pin: typed, pinError: document.getElementById('pin-e').textContent, phoneError: document.getElementById('ph-e').textContent });
+  </script>
+</body>
+</html>

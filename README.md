@@ -38,6 +38,7 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 - [Quick start](#quick-start)
 - [Using every feature](#using-every-feature)
 - [Eyes and real typing](#eyes-and-real-typing)
+- [Self-healing](#self-healing)
 - [The form-filling engine](#the-form-filling-engine)
 - [Answers that never depend on the AI](#answers-that-never-depend-on-the-ai)
 - [The resume and cover letter](#the-resume-and-cover-letter)
@@ -99,6 +100,7 @@ Auto Job does the repetitive part and leaves the decisions to you:
 - **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list, and applies to the ones you tick, one after another.
 - **🏆 Lists hackathons** from 8 platforms in one searchable list.
 - **📊 Tracks your applications** from *To apply* to *Offer*.
+- **🩺 Heals itself.** Every field that fails or that the site rejects goes up one ladder: normal fill → real typing → real click → a corrected value from the AI. It checks after every step, remembers per site what worked, and hands you a "Needs you" list with a **Show me** button for anything it couldn't fix.
 - **🛑 Waits for you at the end.** You review the highlighted fields and press Submit twice.
 - **🏠 Runs entirely on your laptop.** The server is a small program on your own machine. Your profile, documents and passwords never go to any Auto Job server, because there isn't one.
 
@@ -460,6 +462,38 @@ flowchart TD
 - **Real typing.** Chrome's debugger interface sends real keystrokes: Backspace to clear, the text itself, then Tab so the site validates. Boxes that only accept individual key presses (digit masks, PIN boxes) get typed one key at a time. To the page this is identical to your keyboard. The debugger is attached only while a box is being retyped and detached right after. While it's attached, Chrome shows its standard "started debugging this browser" bar.
 - **Why not Playwright, Selenium or Electron?** They drive a separate, automated browser. That means no logins (your Workday and Gmail sessions), and many portals detect automated browsers and block them. Auto Job stays in your own browser, so the site sees you.
 
+## Self-healing
+
+When a field fails, or the site rejects it, Auto Job doesn't just retry the same thing. Every failing field goes through one ladder of strategies, and after **each** step it checks two things: does the field show the value, and has the site stopped objecting?
+
+```mermaid
+flowchart TD
+    F["A field didn't take, or the site rejects it<br/>(found by read-back, the site's error text, or the visual check)"] --> M{"Did a strategy fix this<br/>field on this site before?"}
+    M -- Yes --> K["Try that strategy first"]
+    M -- No --> S1
+    K --> S1["1 · Normal fill"]
+    S1 --> C1{"Shows the value and<br/>no error from the site?"}
+    C1 -- No --> S2["2 · Real typing: paste as a keyboard,<br/>then one key at a time"]
+    S2 --> C2{Fixed?}
+    C2 -- No --> S3["3 · Real click: open the list,<br/>search, click the option"]
+    S3 --> C3{Fixed?}
+    C3 -- No --> S4["4 · Ask for a corrected value<br/>using the site's own message, run 1-3 again"]
+    S4 --> C4{Fixed?}
+    C1 -- Yes --> OK
+    C2 -- Yes --> OK
+    C3 -- Yes --> OK
+    C4 -- Yes --> OK["Healed ✓<br/>remember the strategy for this site"]
+    C4 -- No --> ME["🙋 Needs you: what was tried, the site's message,<br/>and a Show me button"]
+```
+
+- **It checks after every step.** A strategy only counts as working if the field shows the value **and** the site's own error is gone. A value that looks right but is still flagged isn't counted as fixed.
+- **It learns per site.** The strategy that fixed a field is remembered for that site (for example "PIN code on careers.example.com: real typing"), and next time that's tried first.
+- **It hands off clearly.** Anything it couldn't fix appears under 🙋 **Needs you**, with the site's message and the path it tried (for example "normal fill ✗ → real typing ✗"). **Show me** scrolls to the field, outlines it red and puts your cursor in it.
+- **One engine for every failure.** Fields that didn't take, fields the site flags after you leave them, problems the visual check sees, and pages that refuse to move on all go through the same ladder.
+- **It reports every step.** The panel shows the path for each healed field, for example "normal fill ✗ → real typing ✓".
+
+Test page: `/test/heal.html`. One box only accepts individual key presses, so it heals at real typing. Another rejects everything, so it goes to "Needs you".
+
 ## The form-filling engine
 
 What makes it work on real portals and not only on simple forms:
@@ -637,6 +671,7 @@ With the server running, open any of these and use the panel on it:
 | `/test/langs.html` | Add Language editors and Link 1 / 2 / 3 boxes |
 | `/test/workday.html` · `/test/wdexp.html` · `/test/wdstate.html` | Workday prompts, split dates, values Workday ignores unless typed |
 | `/test/juspay.html` | Phone with a separate +91 box, CAPTCHA hand-off |
+| `/test/heal.html` | Self-healing: one box heals at real typing, one always ends in "Needs you" |
 | `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |
 | `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
 | `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |

@@ -1,7 +1,7 @@
 // Injected into every frame of the job page by the side panel.
 // Exposes window.__jobfill: scan / fill / upload / next / submit helpers. Never submits on its own.
 (() => {
-  if (window.__jobfill?.version === 6) return;
+  if (window.__jobfill?.version === 7) return;
 
   const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'password']);
   const clean = (s) => (s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim(); // zero-width padding (PyjamaHR) is not text
@@ -1692,6 +1692,19 @@
     return i < 0 ? null : centerOf(opts[i]);
   }
   const checkValue = (id, value) => holds(id, value);
+  // "Show me": bring a field you need to fix into view, outline it red and put the cursor in it.
+  function jumpTo(id) {
+    const el = findById(id) || groups.get(id)?.[0];
+    if (!el) return false;
+    const box = visualBox(el);
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    box.style.outline = '3px solid #ef4444';
+    box.style.outlineOffset = '3px';
+    el.focus?.({ preventScroll: true });
+    return true;
+  }
+  // The site's own error on one field right now ('' when it has none).
+  const fieldError = (id) => { const m = groups.get(id); return m ? m.map(errorFor).find(Boolean) || '' : errorFor(findById(id)); };
 
   // For page screenshots: page height, viewport height, and scrolling to a slice.
   const pageMetrics = () => ({ height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0), view: innerHeight, y: scrollY });
@@ -1704,7 +1717,7 @@
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
   window.__jobfill = {
-    version: 6,
+    version: 7,
     scan,
     fill,
     uploadFile,
@@ -1734,6 +1747,8 @@
     clickPoint,
     optionPoint,
     checkValue,
+    jumpTo,
+    fieldError,
     pageMetrics,
     scrollToY,
     saveOpenCard,

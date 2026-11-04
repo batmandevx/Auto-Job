@@ -248,6 +248,43 @@ const currentJob = () => ({
 });
 const jobKey = () => `${currentJob().company}|${currentJob().title}|${currentJob().description.length}`;
 
+// ---------- company research ----------
+async function research({ refresh = false } = {}) {
+  const job = currentJob();
+  if (!job.company) throw new Error('Read the job first (no company name yet)');
+  $('#researchOut').innerHTML = `<p class="hint">Researching ${esc(job.company)}: website, Wikipedia, recent news…</p>`;
+  const tab = await activeTab().catch(() => null);
+  const links = tab ? (await callAll(tab.id, 'pageLinks').catch(() => [])).flatMap((f) => f.result || []) : [];
+  const r = await api('/api/research', { method: 'POST', body: { ...job, links, refresh } });
+  state.research = r;
+  renderResearch(r);
+  return r;
+}
+function renderResearch(r) {
+  const chips = (xs) => (xs || []).map((x) => `<span class="chip">${esc(x)}</span>`).join(' ');
+  const list = (xs) => (xs?.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '');
+  const sec = (title, body) => (body ? `<div class="r-sec"><b>${title}</b>${body}</div>` : '');
+  const s = r.snapshot || {};
+  const age = Math.round((Date.now() - r.at) / 3600_000);
+  $('#researchMeta').textContent = `${r.company} · ${r.confidence} confidence`;
+  $('#researchOut').innerHTML = `<div class="research">
+    <p>${esc(s.what || '')}${s.stage || s.hq ? `<span class="src">${esc([s.stage, s.hq].filter(Boolean).join(' · '))}</span>` : ''}</p>
+    ${sec('Products', s.products?.length ? `<div>${chips(s.products)}</div>` : '')}
+    ${sec('Customers', s.customers ? `<p>${esc(s.customers)}</p>` : '')}
+    ${sec('Engineering stack', r.stack?.length ? `<div>${chips(r.stack)}</div>` : '')}
+    ${sec('Recent news', r.news?.length ? `<ul>${r.news.map((n) => `<li>${esc(n.headline)}${n.date ? ` <span class="src">${esc(n.date)}</span>` : ''}</li>`).join('')}</ul>` : '')}
+    ${sec('Culture', list(r.culture))}
+    ${sec('The team', r.team ? `<p>${esc(r.team)}</p>` : '')}
+    ${sec('Interview', r.interview?.process || r.interview?.focus?.length ? `<p>${esc(r.interview.process || '')}</p>${r.interview.focus?.length ? `<div>${chips(r.interview.focus)}</div>` : ''}` : '')}
+    ${sec('⚠️ Red flags', r.redFlags?.length ? `<ul>${r.redFlags.map((f) => `<li class="bad-text">${esc(f.flag)}${f.evidence ? ` <span class="src">${esc(f.evidence)}</span>` : ''}</li>`).join('')}</ul>` : '<p class="hint">None found in these sources.</p>')}
+    ${sec('Your fit', `${r.fit?.strengths?.length ? `<p class="good-text">✓ ${r.fit.strengths.map(esc).join('<br>✓ ')}</p>` : ''}${r.fit?.gaps?.length ? `<p class="warn-text">△ ${r.fit.gaps.map(esc).join('<br>△ ')}</p>` : ''}`)}
+    ${sec('Your angle', r.strategy?.angle ? `<p><i>${esc(r.strategy.angle)}</i></p>${list(r.strategy.talkingPoints)}` : '')}
+    ${sec('Questions to ask them', list(r.strategy?.questionsToAsk))}
+    ${sec(`Sources (${r.sources?.length || 0})`, r.sources?.length ? `<ol class="sources">${r.sources.map((x) => `<li><a href="${esc(safeUrl(x.url))}" target="_blank">${esc(x.title || x.url)}</a></li>`).join('')}</ol>` : '<p class="hint">No sources found: treat this as unverified.</p>')}
+    <p class="hint">${esc(r.method || '')}${r.cached ? ` · saved ${age < 1 ? 'just now' : `${age} h ago`}` : ''} · the cover letter uses these facts</p>
+  </div>`;
+}
+
 // ---------- 2. resume & cover letter ----------
 async function tailor() {
   if (currentJob().description.length < 80) await readJob();
@@ -1069,6 +1106,10 @@ async function runAll() {
   $('#progress').innerHTML = '';
   progress('Reading the job…');
   if (!state.job || state.job.url !== tab.url) await readJob();
+  if ($('#researchFirst').checked && currentJob().company && state.research?.company !== currentJob().company) {
+    progress(`Researching ${currentJob().company}…`);
+    await research().catch((e) => progress(`Company research skipped: ${e.message.slice(0, 80)}`));
+  }
 
   tab = await openApplication(tab);
   await ensureResume();
@@ -1578,6 +1619,8 @@ document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click
 const on = (id, fn) => $(id).addEventListener('click', (e) => busy(e.currentTarget, fn)().catch(() => {}));
 on('#runAll', runAll);
 on('#readJob', readJob);
+on('#research', () => research());
+on('#refreshResearch', () => research({ refresh: true }));
 on('#tailor', tailor);
 on('#cover', coverLetter);
 on('#fill', async () => {
@@ -1829,7 +1872,7 @@ $('#serverUrl').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ server: SERVER });
   checkServer();
 });
-for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']) {
+for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) {
   $(`#${id}`).addEventListener('change', (e) => chrome.storage.local.set({ [id]: e.target.checked }));
 }
 
@@ -1893,9 +1936,9 @@ chrome.storage.local.get(['boards', 'boardJobs', 'savedHacks']).then(({ boards, 
     renderJobs();
   }
 });
-chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']).then((s) => {
+chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']).then((s) => {
   if (s.server) SERVER = s.server;
   $('#serverUrl').value = SERVER;
-  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
+  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
   checkServer();
 });

@@ -8,6 +8,7 @@ import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { chatJSON, describeProvider, geminiStatus, usedFallbackRecently } from './llm.js';
 import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM, VISION_SYSTEM } from './prompts.js';
+import { researchCompany, researchFor } from './research.js';
 import { tailorResume, withoutGradSentences, crisp, cleanRole } from './tailor.js';
 import { profileSkillsInJD } from './keywords.js';
 import { listHackathons } from './hackathons.js';
@@ -165,6 +166,13 @@ function coverProblems(t) {
 }
 
 // Cover letter for one job: text (for text boxes) and a PDF (for upload fields).
+// Company research before applying (Google-Search-grounded, cached a week).
+app.post('/api/research', route(async (req, res) => {
+  const profile = getProfile();
+  if (!profile) return res.status(400).json({ error: 'Import your resume first' });
+  res.json(await researchCompany(req.body || {}, profile, { refresh: !!req.body?.refresh }));
+}));
+
 app.post('/api/cover-letter', route(async (req, res) => {
   const profile = getProfile();
   if (!profile) return res.status(400).json({ error: 'Import your resume first' });
@@ -172,7 +180,8 @@ app.post('/api/cover-letter', route(async (req, res) => {
   if (description.trim().length < 80) return res.status(400).json({ error: 'Job description is missing or too short' });
   const { sourceText, answerBank, documents, personal, ...rest } = profile;
   const keywords = [...new Set([...(req.body.keywords || []), ...profileSkillsInJD(rest, description)])].slice(0, 16);
-  const input = { PROFILE: rest, KEYWORDS_TO_USE: keywords, JOB: { title: cleanRole(title) || title, postedTitle: title, company, location, description: description.slice(0, 12000) } };
+  const companyFacts = researchFor({ company, title });
+  const input = { PROFILE: rest, KEYWORDS_TO_USE: keywords, JOB: { title: cleanRole(title) || title, postedTitle: title, company, location, description: description.slice(0, 12000) }, ...(companyFacts ? { COMPANY_FACTS: companyFacts } : {}) };
   let out = await chatJSON(COVER_SYSTEM, JSON.stringify(input), { temperature: 0.5, heavy: true });
   // Quality gate: length, four paragraphs, no stock phrases. One rewrite with the problems spelled out.
   const problems = coverProblems(String(out.text || ''));

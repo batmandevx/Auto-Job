@@ -63,6 +63,7 @@
           <label class="switch" title="Adds job keywords you don't have yet to a 'Familiar with / learning' line, so the resume covers 100% of keywords without claiming experience"><input type="checkbox" id="fillGaps" /><span class="track"></span>100% keywords</label>
           <label class="switch" title="After filling each page, takes screenshots and asks Gemini what looks wrong on screen (errors, empty required fields, wrong values), then fixes those fields"><input type="checkbox" id="visualCheck" checked /><span class="track"></span>👁 Visual check</label>
           <label class="switch" title="Fields a site still rejects get retyped with real keystrokes through Chrome's debugger. Chrome shows a 'started debugging' bar while it types"><input type="checkbox" id="realTyping" checked /><span class="track"></span>⌨️ Real typing</label>
+          <label class="switch" title="Before tailoring, research the company (website, Wikipedia, news) so the cover letter uses real, sourced facts. Saved for a week per company"><input type="checkbox" id="researchFirst" checked /><span class="track"></span>🔎 Research company</label>
         </div>
         <div id="progress" class="progress" aria-live="polite"></div>
       </div>
@@ -77,6 +78,18 @@
           </div>
           <input id="jobLocation" placeholder="Location" />
           <textarea id="jobDesc" rows="6" placeholder="Job description (read from the page, or paste it)"></textarea>
+        </div>
+      </details>
+
+      <details class="card section" id="researchCard">
+        <summary><span class="num">🔎</span>Company research<span class="sum-meta" id="researchMeta"></span></summary>
+        <div class="section-body">
+          <p class="hint">What the company does, recent news, stack, interview focus, red flags, how you fit, and an angle for your application. Facts come only from sources listed at the bottom.</p>
+          <div class="row">
+            <button id="research" class="btn ghost">Research this company</button>
+            <button id="refreshResearch" class="btn ghost sm" title="Research again instead of using this week's saved result">↻ Fresh</button>
+          </div>
+          <div id="researchOut"></div>
         </div>
       </details>
 

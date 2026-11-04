@@ -14,13 +14,19 @@ export function describeProvider() {
 
 // heavy: true marks quality-critical calls (resume parsing / tailoring) that may use a stronger model.
 // images: base64 JPEG screenshots, for the visual page check (Gemini only).
-export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs, images = [] } = {}) {
+// search: Gemini answers with Google Search grounding; the result gets a `_sources` list ({ title, url }).
+export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs, images = [], search = false } = {}) {
   const p = provider();
   let text;
+  if (search) {
+    if (p !== 'gemini') throw new Error('Company research needs Gemini (LLM_PROVIDER=gemini): it searches the web with Google Search');
+    const out = await gemini(system, user, temperature, heavy, budgetMs ?? 90000, [], true);
+    return { ...parseJSON(out.text), _sources: out.sources };
+  }
   if (images.length && p !== 'gemini') throw new Error('The visual check needs Gemini (LLM_PROVIDER=gemini)');
   if (p === 'gemini') {
     try {
-      text = await gemini(system, user, temperature, heavy, budgetMs ?? (heavy ? 150000 : 60000), images);
+      text = (await gemini(system, user, temperature, heavy, budgetMs ?? (heavy ? 150000 : 60000), images)).text;
     } catch (e) {
       // Free Gemini quota gone or every model overloaded: use the local Ollama model if it's running.
       if (images.length || process.env.OLLAMA_FALLBACK === 'off' || !(await ollamaUp())) throw e;
@@ -45,14 +51,15 @@ export function geminiStatus() {
   return [...resting].filter(([, t]) => t > now).map(([m, t]) => ({ model: m, minutes: Math.round((t - now) / 60000) }));
 }
 
-async function gemini(system, user, temperature, heavy, budgetMs, images = []) {
+async function gemini(system, user, temperature, heavy, budgetMs, images = [], search = false) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set in server/.env');
   const main = (heavy && process.env.GEMINI_HEAVY_MODEL) || describeProvider().model;
   const extra = (process.env.GEMINI_FALLBACK_MODELS || process.env.GEMINI_FALLBACK_MODEL || '').split(',').map((m) => m.trim());
   const chain = [...new Set([main, ...extra, ...DEFAULT_CHAIN].filter(Boolean))];
   const ready = chain.filter((m) => !(resting.get(m) > Date.now()));
-  const models = ready.length ? ready : chain; // everything resting: try anyway
+  // Search grounding is refused outright on free keys: try one model and fail fast, without resting any model.
+  const models = search ? (ready.length ? ready : chain).slice(0, 1) : ready.length ? ready : chain; // everything resting: try anyway
   // Each model gets at most its own timeout, and the whole chain at most budgetMs, so nothing ever "hangs".
   const perModel = Number(process.env.GEMINI_TIMEOUT_MS || (heavy ? 90000 : 25000));
   const deadline = Date.now() + budgetMs;
@@ -74,7 +81,9 @@ async function gemini(system, user, temperature, heavy, budgetMs, images = []) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: user }, ...images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))] }],
-          generationConfig: { temperature, responseMimeType: 'application/json', maxOutputTokens: 32768, thinkingConfig },
+          // Search grounding can't be combined with JSON mode: the prompt asks for JSON and parseJSON extracts it.
+          ...(search ? { tools: [{ google_search: {} }] } : {}),
+          generationConfig: { temperature, ...(search ? {} : { responseMimeType: 'application/json' }), maxOutputTokens: 32768, thinkingConfig },
         }),
       });
     } catch (e) {
@@ -86,12 +95,14 @@ async function gemini(system, user, temperature, heavy, budgetMs, images = []) {
     if (res.ok) {
       const data = await res.json();
       const text = data.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text || '').join('');
-      if (text) return text;
+      const sources = (data.candidates?.[0]?.groundingMetadata?.groundingChunks || []).map((c) => c.web).filter((w) => w?.uri).map((w) => ({ title: w.title || '', url: w.uri }));
+      if (text) return { text, sources };
       lastError = new Error(`Gemini returned no text (${data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || 'unknown'})`);
       continue;
     }
     const body = await res.text();
     lastError = new Error(`Gemini ${model} ${res.status}: ${body.slice(0, 200)}`);
+    if (search) break; // the caller falls back to its own sources
     if (res.status === 429) {
       // Daily quota: rest until it resets (midnight Pacific); per-minute limit: a minute.
       const daily = /PerDay/i.test(body);

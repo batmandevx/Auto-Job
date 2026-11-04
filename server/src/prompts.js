@@ -121,6 +121,8 @@ Rules:
   company/team (from JOB) is a good match. Never invent facts about the company.
 - Paragraph 4 (close, 2 sentences): available to start immediately and a direct call to action (a conversation about
   how they would contribute to the named team/product).
+- COMPANY_FACTS (when given) are researched, sourced facts about the company: use one of them (or its "hook") for the
+  specific reason this company is a good match in paragraph 3, instead of a generic line. Never add company facts beyond them.
 - If FIX_THESE is given, rewrite PREVIOUS_DRAFT so every listed problem is gone, keeping its facts.
 - Use only facts in PROFILE. Never invent metrics, employers or skills.
 - KEYWORDS_TO_USE are job-description keywords the candidate really has: work at least 8 of them in naturally
@@ -160,3 +162,29 @@ required, filled }. When a problem belongs to a field, give its badge number in 
 its label. Badges themselves are not part of the page: never report them.
 Output JSON: { "problems": [ { "field": <badge number or 0>, "label": "<field label or empty>", "problem": "<what is wrong, short>", "fix": "<what the value should look like, if visible>" } ],
   "summary": "<one short sentence>" }`;
+
+// Company research, grounded in Google Search results (and the company's own site when we could read it).
+export const RESEARCH_SYSTEM = `You research a company for a candidate who is about to apply to a job there.
+SOURCES are numbered pages we read (the company's website, Wikipedia, news headlines); if you also have Google Search,
+use it too. Report ONLY what your sources support; leave a field empty or
+an array empty when you can't find it. Never guess numbers, dates, funding amounts or names. Prefer the last 12 months.
+Do not research or name individual employees or the hiring manager; describe the team or org instead.
+Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
+{
+  "snapshot": { "what": "<one sentence: what the company does>", "products": ["<main products>"], "customers": "<who they sell to>",
+                "stage": "<public / private, funding stage or size, if found>", "hq": "<HQ city, if found>" },
+  "stack": ["<engineering technologies the company or this team uses, from job posts, engineering blogs, talks>"],
+  "culture": ["<short, sourced points about how they work: values, engineering culture, work mode>"],
+  "news": [ { "headline": "<recent funding, launch, growth, layoffs or leadership change>", "date": "<month year>" } ],
+  "team": "<what the team behind this role works on, from JOB and sources>",
+  "interview": { "process": "<the interview rounds a source reports for this company; if none does, start with 'From the job post:' and say what the role suggests>", "focus": ["<topics they test, or that JOB emphasises>"] },
+  "redFlags": [ { "flag": "<a real, sourced concern: recent layoffs, poor reviews, pay delays, legal trouble>", "evidence": "<short>" } ],
+  "fit": { "strengths": ["<where CANDIDATE clearly matches JOB and the company>"], "gaps": ["<what JOB asks for that CANDIDATE lacks>"] },
+  "strategy": { "angle": "<the one positioning that fits this candidate to this company, in one sentence>",
+                "talkingPoints": ["<3 specific points linking CANDIDATE's real work to the company's products / stack>"],
+                "questionsToAsk": ["<3 smart questions for the interviewer>"],
+                "coverLetterHook": "<one factual sentence about the company the cover letter can open its 'why you' with>" },
+  "confidence": "<high / medium / low: how much solid information you found>",
+  "usedSources": [<the "n" of every SOURCES item you relied on>]
+}
+"fit" and "strategy" use only CANDIDATE's real experience. Keep every string short and concrete.`;

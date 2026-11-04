@@ -39,6 +39,7 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 - [Using every feature](#using-every-feature)
 - [Eyes and real typing](#eyes-and-real-typing)
 - [Self-healing](#self-healing)
+- [Company research](#company-research)
 - [The form-filling engine](#the-form-filling-engine)
 - [Answers that never depend on the AI](#answers-that-never-depend-on-the-ai)
 - [The resume and cover letter](#the-resume-and-cover-letter)
@@ -75,6 +76,7 @@ Auto Job does the repetitive part and leaves the decisions to you:
 ## What it does
 
 - **🧭 Finds the form.** On a job page it presses *Apply now*. It follows up to four "Apply" steps (job board → countdown page → company site → form), including ones that open a new tab.
+- **🔎 Researches the company first.** What it does, products, recent news, stack, interview focus, red flags, how you fit and an angle for your application. Every fact comes from a listed source, and the cover letter uses them.
 - **📄 Tailors your resume.** It builds a one-page, single-column, ATS-safe PDF for each job:
   - your experience reordered and reworded to the job's own terms
   - skills grouped the way recruiters scan them
@@ -494,6 +496,33 @@ flowchart TD
 
 Test page: `/test/heal.html`. One box only accepts individual key presses, so it heals at real typing. Another rejects everything, so it goes to "Needs you".
 
+## Company research
+
+Before applying, Auto Job researches the company so your application says something specific and true about it.
+
+<img src="docs/screenshots/company-research.png" width="360" align="right" alt="Company research card for Razorpay: products, stack, recent news, interview focus, red flags, your fit, your angle, questions to ask, and the 4 sources" />
+
+| Section | What you get |
+|---|---|
+| **Snapshot** | What the company does, its products and customers, stage (public / funding) and HQ |
+| **Engineering stack** | Technologies the company or team uses |
+| **Recent news** | Funding, launches, licences, layoffs or leadership changes from the last 12 months, with dates |
+| **Culture and team** | How they work, and what the team behind this role builds |
+| **Interview** | Rounds a source reports, or "From the job post:" what the role suggests, plus the topics to prepare |
+| **⚠️ Red flags** | Sourced concerns only (layoffs, pay delays, legal trouble), or "None found" |
+| **Your fit** | Where your real experience matches (✓) and the gaps (△) |
+| **Your angle** | One positioning sentence, three talking points from your own work, and three questions to ask them |
+| **Sources** | Every page it used, as links |
+
+**How it stays factual:**
+- **It reads real sources itself:** the company's website (home, about, careers and engineering pages), Wikipedia and Wikidata (which also give the official website when the job page doesn't link it), and recent headlines from Google News. When your Gemini key supports Google Search grounding (paid keys), that's used too.
+- **The AI may only use those sources.** Anything they don't support is left empty instead of guessed, and every source used is listed as a link.
+- **No people profiling.** It describes the *team* behind the role, and never researches or names individual employees or the hiring manager.
+- **It improves the cover letter.** The "why this company" line in the cover letter comes from these sourced facts instead of a generic sentence.
+- **Cost:** one AI request, saved for a week per company and role (**↻ Fresh** re-researches). The **🔎 Research company** switch runs it automatically during **Do it all**.
+
+<br clear="right"/>
+
 ## The form-filling engine
 
 What makes it work on real portals and not only on simple forms:
@@ -618,6 +647,7 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | POST | `/api/cover-letter` | Cover letter text + PDF for a job |
 | POST | `/api/answer` | Values for a list of form fields (with optional site errors) |
 | POST | `/api/answer-bank` | Remember answers from a submitted form |
+| POST | `/api/research` | Company research for a job, with sources (saved a week) |
 | POST | `/api/vision` | Screenshots of a filled page → the problems Gemini sees on it |
 | GET / POST / DELETE | `/api/documents[/:kind]` | List, upload, fetch or remove documents |
 | POST | `/api/email/draft` · `/api/email/send` | Draft and send an application email |
@@ -648,6 +678,7 @@ Auto-Job/
 │   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude, quota handling
 │   │   ├── mail.js            Gmail IMAP / SMTP
 │   │   ├── hackathons.js      8 hackathon platforms
+│   │   ├── research.js        company research: website, Wikipedia / Wikidata, news, sources
 │   │   └── store.js           profile, documents, tracker on disk
 │   ├── test/                  test forms that copy real portals
 │   └── .env.example

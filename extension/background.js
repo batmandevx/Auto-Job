@@ -100,9 +100,13 @@ async function useSidePanelForIcon() {
   await chrome.action.setPopup({ popup: '' }).catch(() => {});
   await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
 }
+// Browsers that really show extension side panels say so in their brand list. Arc doesn't, so it keeps the popup.
+const NATIVE_SIDE_PANEL = /Google Chrome|Microsoft Edge|Brave|Opera|Vivaldi/i;
 async function applyIconMode() {
-  const { sidePanelWorks } = await chrome.storage.local.get('sidePanelWorks');
-  if (sidePanelWorks && typeof chrome.sidePanel?.setPanelBehavior === 'function') return useSidePanelForIcon();
+  const { sidePanelWorks, sidePanelUnsupported } = await chrome.storage.local.get(['sidePanelWorks', 'sidePanelUnsupported']);
+  const brands = (navigator.userAgentData?.brands || []).map((b) => b.brand).join(' ');
+  const native = NATIVE_SIDE_PANEL.test(brands);
+  if ((sidePanelWorks || native) && !sidePanelUnsupported && typeof chrome.sidePanel?.setPanelBehavior === 'function') return useSidePanelForIcon();
   // Popup mode: we handle side panel opening ourselves, otherwise Arc swallows the click and nothing opens.
   await chrome.action.setPopup({ popup: 'sidepanel.html' }).catch(() => {});
   await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});

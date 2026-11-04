@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Auto Job",
   "version": "0.9.1",
-  "description": "Reads the job, tailors your resume, fills the application form, and waits for you to review before submitting.",
+  "description": "Tailors your resume and fills every page of a job application, even Workday, then stops for your review. Runs on your laptop.",
   "permissions": [
     "sidePanel",
     "scripting",

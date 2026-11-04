@@ -8,6 +8,8 @@
 
 A Chrome / Arc extension and a small local server that read a job posting, tailor a one-page ATS-friendly resume and cover letter for it, fill every page of the application form, and stop at the final Submit so you can review.
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-7c3aed.svg)](LICENSE) ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white) ![Runs locally](https://img.shields.io/badge/runs-on%20your%20laptop-22c55e) ![Node 20+](https://img.shields.io/badge/node-20%2B-339933?logo=nodedotjs&logoColor=white)
+
 `Chrome` · `Arc` · `Edge` · `Brave` · `Gemini` · `Ollama` · `OpenAI-compatible` · `Claude` · `Node.js` · `Manifest V3`
 
 </div>
@@ -47,6 +49,7 @@ A Chrome / Arc extension and a small local server that read a job posting, tailo
 - [Testing without a real job](#testing-without-a-real-job)
 - [Troubleshooting](#troubleshooting)
 - [Limits](#limits)
+- [License](#license)
 
 ---
 
@@ -660,6 +663,10 @@ All paths are on `http://localhost:8787`.
 - **Unusual widgets** (drag-to-rank, canvas date pickers) may need a click. They're listed as "pick it yourself".
 - **LinkedIn / Indeed terms** restrict automation. Auto Job fills for your review and never submits on its own.
 - **The AI can be wrong** on open-ended questions. That's why those answers are orange: read them before you submit.
+
+## License
+
+Auto Job is released under the [MIT License](LICENSE): you can use, change and share it, including commercially, as long as you keep the copyright notice. It comes with no warranty. You're responsible for how you use it, including each job site's terms of service.
 
 ---
 

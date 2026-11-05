@@ -30,6 +30,10 @@ jobs:
         env:
           CI: 'true'
           CHROME: /usr/bin/google-chrome
-        run: npm test
-      - if: failure()
-        run: tail -100 server.log
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee results.txt
+      - if: always()
+        run: |
+          { echo '### Test forms'; echo '```'; cat results.txt 2>/dev/null; echo '```'; echo '### Server log'; echo '```'; tail -40 server.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

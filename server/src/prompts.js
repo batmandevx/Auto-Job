@@ -81,6 +81,8 @@ Rules:
   description). Example: an Indian citizen applying in India needs no sponsorship; applying in the US does.
 - Years of experience: count only real professional roles in PROFILE (internships count as such if the question allows);
   be conservative and never round up.
+- COMPANY_FACTS (when given) are researched, sourced facts about the company: a "why us / why this company" answer uses one
+  of them (a product, recent news, its stack) instead of generic praise. Never add company facts beyond them.
 - Open-ended questions (why this company, describe a project, strengths...): a specific, honest, first-person answer
   of 60-150 words (or within any stated limit) connecting real PROFILE experience to the JOB. No cliches
   ("excited", "eager", "passionate", "I believe", "thrilled", "I am writing"). Never volunteer graduation year or student

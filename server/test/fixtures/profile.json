@@ -1,0 +1,108 @@
+{
+  "name": "Riya Sharma",
+  "email": "riya.sharma@example.com",
+  "phone": "+91-9876543210",
+  "location": "Pune, India",
+  "links": {
+    "linkedin": "https://linkedin.com/in/riya-sample",
+    "github": "https://github.com/riya-sample",
+    "portfolio": "https://riya-sample.dev",
+    "other": []
+  },
+  "headline": "Software Engineer | Backend",
+  "summary": "Backend engineer.",
+  "skills": [
+    {
+      "category": "Languages",
+      "items": [
+        "Python",
+        "Go",
+        "Java",
+        "SQL",
+        "Docker"
+      ]
+    }
+  ],
+  "experience": [
+    {
+      "company": "Finlytics Pvt Ltd",
+      "title": "Software Engineer",
+      "location": "Pune",
+      "start": "Jul 2023",
+      "end": "Present",
+      "bullets": [
+        "Cut payment API p99 latency 45%"
+      ]
+    },
+    {
+      "company": "DataNest",
+      "title": "Software Engineering Intern",
+      "location": "Bengaluru",
+      "start": "Jan 2023",
+      "end": "Jun 2023",
+      "bullets": [
+        "Shipped a FastAPI gateway"
+      ]
+    },
+    {
+      "company": "CodeCraft Labs",
+      "title": "Backend Developer Intern",
+      "location": "Remote",
+      "start": "May 2022",
+      "end": "Aug 2022",
+      "bullets": [
+        "Built REST APIs in Django"
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "school": "College of Engineering Pune",
+      "degree": "B.Tech",
+      "field": "Computer Engineering",
+      "start": "2019",
+      "end": "May 2023",
+      "gpa": "8.7/10",
+      "details": []
+    }
+  ],
+  "certifications": [
+    "AWS Certified Developer"
+  ],
+  "achievements": [],
+  "personal": {
+    "dateOfBirth": "1999-08-14",
+    "gender": "Female",
+    "nationality": "Indian",
+    "addressLine1": "Flat 12, Example Residency",
+    "addressLine2": "Baner Road",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "postalCode": "411045",
+    "country": "India",
+    "placeOfBirth": "Pune, Maharashtra, India",
+    "graduationYear": "2023",
+    "graduationDate": "May 2023",
+    "languages": "English, Hindi"
+  },
+  "documents": {},
+  "answerBank": {},
+  "answers": {
+    "workAuthorization": "Indian citizen",
+    "needsSponsorship": "No for jobs in India",
+    "willingToRelocate": "Yes",
+    "noticePeriod": "30 days",
+    "noticeDays": "30",
+    "expectedSalary": "₹28–32 LPA",
+    "expectedSalaryAnnual": "3000000",
+    "currentSalary": "₹22 LPA",
+    "currentSalaryAnnual": "2200000",
+    "currentLocation": "Pune, Maharashtra, India",
+    "yearsOfExperience": "3",
+    "currentlyEmployed": "Yes",
+    "isFresher": "No"
+  },
+  "sourceFiles": [],
+  "sourceText": ""
+}

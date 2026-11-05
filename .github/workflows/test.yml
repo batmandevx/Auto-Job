@@ -1,0 +1,35 @@
+name: Test forms
+
+# Every push: start the server with a made-up demo profile (no AI key, no Gmail) and fill all test forms in headless Chrome.
+on:
+  push:
+  pull_request:
+
+jobs:
+  forms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Demo data folder
+        run: mkdir -p "$RUNNER_TEMP/data" && cp test/fixtures/*.json "$RUNNER_TEMP/data/"
+      - name: Start the server (profile rules only: no AI)
+        run: |
+          AUTOJOB_DATA="$RUNNER_TEMP/data" LLM_PROVIDER=ollama OLLAMA_URL=http://127.0.0.1:9 OLLAMA_FALLBACK=off nohup node src/index.js > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8787/api/health && break; sleep 1; done
+      - name: Fill every test form
+        env:
+          CI: 'true'
+          CHROME: /usr/bin/google-chrome
+        run: npm test
+      - if: failure()
+        run: tail -100 server.log

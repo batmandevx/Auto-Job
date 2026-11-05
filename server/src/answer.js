@@ -2,6 +2,7 @@ import { chatJSON } from './llm.js';
 import { ANSWER_SYSTEM } from './prompts.js';
 import { bankKey } from './store.js';
 import { withoutGradSentences } from './tailor.js';
+import { researchFor } from './research.js';
 
 const POSTGRAD_TEXT = /post\s*-?\s*graduat\w*\s*(year|date|passing)|year\s*of\s*post\s*-?\s*graduat/i;
 const TEXTLIKE = ['text', 'email', 'tel', 'url', 'search', 'date', 'number', 'combobox', 'tags', ''];
@@ -70,12 +71,19 @@ function toHintFormat(v, hint, fallback = '') {
   const sep = fmt.match(/[/.\-]/)[0];
   return fmt.toUpperCase().split(/[/.\-]/).map((x) => parts[x]).join(sep);
 }
+const cur = (p, k, fallback) => p.personal?.[k] || p.personal?.[fallback];
+const safeText = (t) => String(t || '').replace(/["“”]/g, "'").replace(/[<>[\]{}\\]/g, '');
 const noRelation = (a) => String(a || '').replace(/,?\s*\b[SDWC]\s*[./]\s*O\b\.?/gi, '').replace(/\s{2,}/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
 const digits = (s) => String(s || '').replace(/\D/g, '');
 
 // Common fields are filled from the profile directly: instant, free and never hallucinated.
 // Order matters: more specific patterns first. Everything else goes to the model in one batch.
 const RULES = [
+  // Current / correspondence address (where you live now) vs permanent address: separate when your profile has both.
+  [/(current|present|correspondence|communication|mailing|local|temporary)\s*(residential\s*)?(address|addr)(\s*line)?\s*1?\b(?!.*(2|two))/i, (p) => cur(p, 'currentAddressLine1', 'addressLine1')],
+  [/(current|present|correspondence|mailing)\s*(residential\s*)?(city|town)\b/i, (p) => cur(p, 'currentCity', 'city')],
+  [/(current|present|correspondence|mailing)\s*(residential\s*)?(state|province)\b/i, (p) => cur(p, 'currentState', 'state')],
+  [/(current|present|correspondence|mailing)\s*(residential\s*)?(pin|postal|zip)\s*(code)?\b/i, (p) => cur(p, 'currentPostalCode', 'postalCode')],
   // EEO self-identification: your saved answers.
   [/^(race|ethnicity|race\s*\/\s*ethnicity|race and ethnicity)\b/i, (p) => p.answers.race],
   [/veteran\s*status|protected veteran/i, (p) => p.answers.veteranStatus],
@@ -109,7 +117,7 @@ const RULES = [
   [/(are you )?currently (employed|working)(\?|$)|current employment status/i, (p) => yesNo(p.answers.currentlyEmployed)],
   // "Do you hold the certifications … as outlined in the job description?": that's about the job's own
   // requirements (often a clearance), not your course certificates.
-  [/certifications?.{0,40}(clearance|as (outlined|listed|described|mentioned)|in the job description|required for (this|the) (role|job|position))/i, (p, f) => (f.options?.find((o) => /not applicable|n\/?a\b/i.test(o)) || 'No')],
+  [/certifications?.{0,40}(clearance|as (outlined|listed|described|mentioned)|in the job description|required for (this|the) (role|job|position))/i, () => 'Not Applicable'], // no such option -> the AI picks
   // Career breaks: none (studying, then internships), and the "reason" box stays empty.
   [/(taken|take|had) a (career )?break|career (break|gap)\??$|gap in (your )?(career|employment)/i, () => 'No'],
   [/reason for (the |your )?(career )?(break|gap)/i, () => null],
@@ -244,7 +252,8 @@ function experienceValue(field, profile) {
   const e = byCompany || profile.experience?.[(field.entry || 1) - 1];
   if (!e) return undefined;
   if (/currently work|current(ly)?\s*(employed|role|job)|i work here|still work/i.test(last)) return isPresent(e.end);
-  if (/description|responsibilit|duties|summary|achievements?|what did you do/i.test(last)) return (e.bullets || []).map((b) => `• ${b}`).join('\n') || undefined;
+  // Workday (and others) reject < > [ ] " { } \ in free text: straight double quotes become single ones.
+  if (/description|responsibilit|duties|summary|achievements?|what did you do/i.test(last)) return safeText((e.bullets || []).map((b) => `• ${b}`).join('\n')) || undefined;
   if (/job\s*title|position|^title$|designation|^role$/i.test(last)) return e.title;
   if (/^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer|organi[sz]ation)(\s*name)?\W*$|name of (the )?(company|employer)/i.test(last)) return String(e.company || '').split(',')[0].trim() || e.company;
   if (/location|city/i.test(last)) return e.location || undefined;
@@ -383,6 +392,7 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
       TODAY: new Date().toISOString().slice(0, 10),
       PROFILE: forModel,
       JOB: { title: job?.title, company: job?.company, location: job?.location, description: (job?.description || '').slice(0, 12000) },
+      ...(researchFor(job || {}) ? { COMPANY_FACTS: researchFor(job || {}) } : {}),
       FIELDS: pending.map(({ id, label, type, options, required, maxLength, placeholder, min, max, format, section, entry }) => ({
         id, label, type, options, required, maxLength, placeholder, min, max, format, section, entry,
         ...(errors[id] ? { rejectedValue: errors[id].previous, siteError: errors[id].message } : {}),
@@ -444,6 +454,13 @@ export function quickFix(field, { message = '', previous = '' }) {
   const m = String(message).toLowerCase();
   const v = String(previous ?? '').trim();
   if (!v) return undefined;
+  // "Contains illegal characters < > [ ] \" { } \\", "special characters are not allowed: …": drop those characters.
+  if (/(illegal|invalid|special|not allowed|forbidden|unsupported)[^.]{0,30}characters?|characters?[^.]{0,30}(not allowed|are invalid)/.test(m)) {
+    const listed = String(message).split(/characters?:?/i).pop().replace(/\b(are|is|not|allowed|invalid|the|following)\b/gi, '').replace(/[a-z0-9\s.,]/gi, '');
+    const bad = new Set(listed ? [...listed] : ['<', '>', '[', ']', '"', '{', '}', '\\', '|', '^', '~', '`']);
+    const fixed = [...v.replace(/[“”]/g, '"').replace(/[‘’]/g, "'")].map((ch) => (bad.has(ch) ? (ch === '"' ? "'" : '') : ch)).join('').replace(/'/g, bad.has("'") ? '' : "'");
+    if (fixed !== v) return fixed;
+  }
   const digits = v.replace(/\D/g, '');
   const n = Number((m.match(/(\d+)\s*(?:-|\s)?digits?/) || [])[1]);
   if (/phone|mobile|contact number|whatsapp/.test(m) || /\d+\s*-?\s*digit/.test(m) || /without (the )?(country|isd) code/.test(m)) {

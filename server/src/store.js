@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DATA_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
+export const DATA_DIR = process.env.AUTOJOB_DATA ? path.resolve(process.env.AUTOJOB_DATA) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data'); // AUTOJOB_DATA: a different data folder (tests)
 export const RESUME_DIR = path.join(DATA_DIR, 'resumes');
 export const DOCS_DIR = path.join(DATA_DIR, 'documents');
 fs.mkdirSync(RESUME_DIR, { recursive: true });
@@ -53,6 +53,11 @@ export const DEFAULT_PERSONAL = {
   state: '',
   postalCode: '',
   country: '',
+  // Where you live now, when it differs from the permanent address above (hostel / rented flat in another city).
+  currentAddressLine1: '',
+  currentCity: '',
+  currentState: '',
+  currentPostalCode: '',
   graduationYear: '',
   graduationDate: '', // e.g. May 2027
   placeOfBirth: '',
@@ -119,6 +124,12 @@ export function updateApplication(id, patch) {
     if (patch.status === 'applied' && !app.appliedAt) app.appliedAt = now;
   }
   for (const k of ['notes', 'title', 'company', 'url', 'location', 'contact']) if (k in patch) app[k] = patch[k];
+  // An email that moved (or confirmed) this application: kept so it's never applied twice, and shown on the card.
+  if (patch.mail?.id && !(app.mail || []).some((m) => m.id === patch.mail.id)) {
+    app.mail = [...(app.mail || []), patch.mail].slice(-20);
+    if (app.history.at(-1)) app.history.at(-1).source = patch.status ? `email: ${String(patch.mail.subject || '').slice(0, 80)}` : app.history.at(-1).source;
+  }
+  if (patch.status === 'rejected' && patch.mail) app.rejectedAt = patch.mail.date || now;
   app.updatedAt = now;
   write(APPS, apps);
   return app;

@@ -513,3 +513,15 @@ html[data-mode="popup"] .brand-sub { display: none; }
 
 /* Hackathon career perks (PPI / PPO / internship / hiring) */
 .hb.perk { background: rgba(34,197,94,.15); color: #16a34a; border-color: rgba(34,197,94,.35); font-weight: 600; }
+
+/* Tracker: Gmail outcomes and insights */
+.insights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.insights .ins { background: var(--soft, rgba(127,127,127,.1)); border-radius: 10px; padding: 6px 8px; text-align: center; }
+.insights .ins b { display: block; font-size: 16px; } .insights .ins span { font-size: 11px; opacity: .75; }
+.insights .hint { grid-column: 1 / -1; margin: 4px 0 0; }
+.app-mail { font-size: 12px; margin: 6px 0 2px; opacity: .9; }
+.app-mail.k-rejected { color: #dc2626; } .app-mail.k-interview, .app-mail.k-offer { color: #16a34a; } .app-mail.k-assessment { color: #d97706; } .app-mail.k-quiet { color: #a16207; }
+
+/* Job match score */
+.job .match { flex: 0 0 auto; min-width: 30px; height: 22px; display: inline-grid; place-items: center; border-radius: 7px; font: 600 11px/1 system-ui; margin-right: 6px; color: #fff; background: hsl(calc(var(--m) * 1.2) 65% 42%); }
+#jobSort { margin-top: 6px; }

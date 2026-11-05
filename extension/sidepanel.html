@@ -111,6 +111,7 @@
         <div class="section-body">
           <div class="row">
             <button id="fill" class="btn ghost">Fill this page</button>
+            <button id="reportForm" class="btn ghost sm" title="Save a privacy-scrubbed copy of this form (structure, labels, errors; no values) as a test page, so whatever went wrong can be fixed for good">🐞 Report this form</button>
             <button id="continue" class="btn ghost">Continue to next pages</button>
           </div>
           <div class="legend"><span><i class="sw ok"></i>filled</span><span><i class="sw warn"></i>please check</span><span><i class="sw bad"></i>needs you</span></div>
@@ -167,6 +168,7 @@
         <div class="search">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
           <input id="jobFilter" placeholder="Filter: engineer, ml, data, sde" />
+          <select id="jobSort" title="Order of the list"><option value="match">Best match first</option><option value="found">As found</option></select>
         </div>
         <label class="switch" style="margin:8px 0 2px"><input type="checkbox" id="includePremium" /><span class="track"></span>Include premium jobs (I'm logged in with premium)</label>
         <div class="row between">
@@ -246,10 +248,18 @@
       <div class="card">
         <div class="row between" style="margin:0 0 6px">
           <h3 class="card-title" style="margin:0">Your applications</h3>
-          <button id="refreshTracker" class="btn ghost sm">↻ Refresh</button>
+          <div class="row" style="margin:0;gap:6px">
+            <button id="traceGmail" class="btn primary sm" title="Read your Gmail (read-only) for rejections, interview invites, assessments, offers and confirmations, and update the tracker">📬 Check Gmail</button>
+            <button id="refreshTracker" class="btn ghost sm">↻ Refresh</button>
+          </div>
         </div>
         <div class="stat-strip" id="trackStats"></div>
         <div class="funnel" id="trackFunnel"></div>
+        <div class="insights" id="trackInsights"></div>
+      </div>
+      <div class="card" id="traceCard" hidden>
+        <div class="row between" style="margin:0 0 6px"><h3 class="card-title" style="margin:0">📬 From your Gmail</h3><span class="hint" id="traceMeta"></span></div>
+        <div id="traceOut"></div>
       </div>
       <div class="card">
         <div class="search">

@@ -37,6 +37,10 @@ const PERSONAL_LABELS = {
   state: 'State',
   postalCode: 'PIN / postal code',
   country: 'Country',
+  currentAddressLine1: 'Current address (if different: hostel, PG, flat)',
+  currentCity: 'Current city',
+  currentState: 'Current state',
+  currentPostalCode: 'Current PIN / postal code',
   graduationYear: 'Graduation year',
   graduationDate: 'Graduation month (e.g. May 2027)',
   placeOfBirth: 'Place of birth',
@@ -576,6 +580,11 @@ async function fillPage(pageNo = 1) {
 
   // Account creation: password boxes are always yours (Auto Job never types passwords).
   const pw = (await callAll(tab.id, 'focusPassword').catch(() => [])).find((f) => f.result?.waiting);
+  // Account memory: the sites where you made an account, so sign-in pages say so instead of you guessing.
+  const host = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+  const { accounts = {} } = await chrome.storage.local.get('accounts');
+  if (pw && pw.result.count === 1 && accounts[host]) rows.push(`<div class="item"><div class="q">🔑 You made an account here on ${new Date(accounts[host]).toLocaleDateString()}</div><div class="v">Sign in with your usual email; Chrome's password manager has the password if you saved it.</div></div>`);
+  if (pw && pw.result.count > 1) await chrome.storage.local.set({ accounts: { ...accounts, [host]: accounts[host] || Date.now() } });
   if (pw) {
     rows.push(`<div class="item warn"><div class="q">🔑 Password <span class="tag review">create it yourself</span></div><div class="v">Auto Job never types passwords. Your cursor is in the box: let Chrome suggest a strong password (right-click → Suggest password), then fill${pw.result.count > 1 ? ' the confirmation box too and' : ''} press Continue.</div></div>`);
     missingRequired.push('account password (create it yourself)');
@@ -1176,7 +1185,42 @@ async function submit() {
 // ---------- job board queue ----------
 function visibleJobs() {
   const q = $('#jobFilter').value.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
-  return state.boardJobs.map((j, i) => ({ j, i })).filter(({ j }) => !q.length || q.some((w) => j.title.toLowerCase().includes(w)));
+  const list = state.boardJobs.map((j, i) => ({ j, i, m: matchScore(j) })).filter(({ j }) => !q.length || q.some((w) => j.title.toLowerCase().includes(w)));
+  if ($('#jobSort')?.value !== 'found') list.sort((a, b) => b.m.score - a.m.score);
+  return list;
+}
+
+// ---------- job match score (no AI): your target roles and skills vs the posting, seniority vs your experience ----------
+const tokens = (x) => String(x || '').toLowerCase().match(/[a-z][a-z0-9+#.]*/g) || [];
+function matchScore(j) {
+  const p = state.profile || {};
+  const a = p.answers || {};
+  const text = `${j.title} ${j.meta || ''}`.toLowerCase();
+  const why = [];
+  let score = 50;
+  // Role: the title against your target roles and headline.
+  const targets = String(a.targetRoles || p.headline || '').toLowerCase().split(/[,|/]+/).map((x) => x.trim()).filter(Boolean);
+  const roleHit = targets.find((t) => tokens(t).filter((w) => w.length > 2 && !/engineer|developer|intern/.test(w)).some((w) => text.includes(w)));
+  if (roleHit) { score += 20; why.push(`matches “${roleHit}”`); }
+  else if (/engineer|developer|sde|scientist|analyst/.test(text)) score += 8;
+  // Skills named in the title or meta.
+  const skills = [...new Set((p.skills || []).flatMap((g) => g.items || []).map((x) => String(x).toLowerCase()))].filter((x) => x.length > 1);
+  const hits = skills.filter((sk) => new RegExp(`(^|[^a-z0-9+#])${sk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9+#])`).test(text));
+  if (hits.length) { score += Math.min(15, 5 * hits.length); why.push(hits.slice(0, 3).join(', ')); }
+  // Seniority against your experience.
+  const years = /^\s*yes/i.test(a.isFresher || '') ? 0 : Number((String(a.yearsOfExperience || '').match(/\d+(\.\d+)?/) || [0])[0]);
+  const need = Number((text.match(/(\d+)\s*\+?\s*(?:-\s*\d+\s*)?(?:years?|yrs)/) || [])[1] || 0);
+  if (/\b(senior|sr\.?|lead|staff|principal|manager|head|director|architect|vp)\b|\b(ii|iii|iv)\b/.test(text) && years < 3) { score -= 30; why.push('senior role'); }
+  if (need > years + 1) { score -= Math.min(30, 10 * (need - years)); why.push(`asks ${need}+ yrs`); }
+  // Internship vs full-time, as your profile prefers.
+  const wantsIntern = /intern/i.test(a.jobTypes || '');
+  const wantsFull = /full[\s-]?time|job/i.test(a.jobTypes || '');
+  if (/\bintern(ship)?\b/.test(text)) { if (wantsIntern) { score += 10; why.push('internship'); } else if (wantsFull && !wantsIntern) score -= 10; }
+  // Already applied (same link, or same company and role in your tracker).
+  const key = (x) => `${String(x.company || '').toLowerCase()}|${String(x.title || '').toLowerCase()}`;
+  const applied = (state.apps || []).find((x) => x.status !== 'saved' && ((x.url && j.url && x.url.split('#')[0] === j.url.split('#')[0]) || (j.company && key(x) === key(j))));
+  if (applied) { score -= 40; why.unshift('already applied'); }
+  return { score: Math.max(0, Math.min(100, Math.round(score))), why, applied: !!applied };
 }
 function trackedBadge(j) {
   const a = j.url && state.apps?.find((x) => x.url && x.url.split('#')[0] === j.url.split('#')[0]);
@@ -1189,9 +1233,9 @@ function renderJobs() {
   const shown = visibleJobs();
   $('#jobCount').textContent = `${shown.length} shown · ${state.boardJobs.filter((j) => j.selected).length} selected`;
   $('#jobList').innerHTML =
-    shown.map(({ j, i }, n) => `<label class="job" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/>
+    shown.map(({ j, i, m }, n) => `<label class="job" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/><span class="match" style="--m:${m.score}" title="${esc(m.why.join(' · ') || 'match score')}">${m.score}</span>
       <span class="job-main">${j.url ? `<a href="${esc(safeUrl(j.url))}" target="_blank">${esc(j.title)}</a>` : `<b>${esc(j.title)}</b>`}${trackedBadge(j)}${j.premium ? ` <span class="badge ${$('#includePremium').checked ? '' : 'warn'}">premium</span>` : ''}
-      <span class="job-meta">${esc([j.meta, j.source].filter(Boolean).join(' · '))}</span></span></label>`).join('') ||
+      <span class="job-meta">${esc([j.meta, j.source].filter(Boolean).join(' · '))}${m.why.length ? ` · <i>${esc(m.why.slice(0, 2).join(' · '))}</i>` : ''}</span></span></label>`).join('') ||
     '<p class="hint">No jobs found yet.</p>';
 }
 
@@ -1281,7 +1325,20 @@ async function openJob(i) {
   $('#queueOut').textContent = `Job ${i + 1} of ${state.queue.length}: ${job.title}. Review it on the Apply tab, then Submit or Skip.`;
 }
 
+// Daily cap and a short, varied pause between jobs: steady, human pacing protects your accounts on job boards.
+const DAILY_CAP = 25;
+const appliedToday = () => (state.apps || []).filter((a) => a.appliedAt && new Date(a.appliedAt).toDateString() === new Date().toDateString()).length;
 async function nextInQueue() {
+  if (appliedToday() >= DAILY_CAP) {
+    state.queueIdx = -1;
+    $('#queueOut').textContent = `Paused: ${DAILY_CAP} applications today is the daily limit. The rest of the queue is still ticked for tomorrow.`;
+    return;
+  }
+  if (state.queueIdx + 1 < state.queue.length) {
+    const wait = 20 + Math.round(Math.random() * 20);
+    $('#queueOut').textContent = `Next job in ${wait} s (pausing between applications)…`;
+    await sleep(wait * 1000);
+  }
   if (state.queueIdx + 1 >= state.queue.length) {
     state.queueIdx = -1;
     $('#queueOut').textContent = 'Queue finished.';
@@ -1367,6 +1424,13 @@ const ago = (iso) => {
 async function loadTracker() {
   const r = await api('/api/applications').catch(() => null);
   if (!r) return;
+  if (!state.traceChecked) {
+    state.traceChecked = true;
+    chrome.storage.local.get(['lastTrace', 'lastTraceResult']).then(({ lastTrace, lastTraceResult }) => {
+      if (lastTraceResult) renderTrace(lastTraceResult), ($('#traceCard').hidden = false);
+      if (!lastTrace || Date.now() - lastTrace > 6 * 3600_000) traceGmail({ quiet: true }).catch(() => {});
+    });
+  }
   state.apps = (Array.isArray(r) ? r : r.items || []).filter((a) => a.id); // older servers return a plain list without ids
   renderTracker();
   renderJobs();
@@ -1374,6 +1438,7 @@ async function loadTracker() {
 
 function renderTracker() {
   const apps = state.apps;
+  renderInsights(apps);
   const count = (f) => apps.filter(f).length;
   const groups = [
     { k: 'saved', label: 'To apply', n: count((a) => a.status === 'saved'), c: STATUS.saved.c },
@@ -1408,13 +1473,114 @@ function renderTracker() {
               <div class="app-sub">${esc([a.company, a.location].filter(Boolean).join(' · '))}${a.via === 'email' ? ' · via email' : ''} · ${a.status === 'saved' ? 'saved' : 'applied'} ${ago(a.appliedAt || a.createdAt)}</div></div>
               <select class="status-select" data-status="${a.id}" style="--c:${m.c}">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === a.status ? 'selected' : ''}>${s.icon} ${s.label}</option>`).join('')}</select></div>
             <div class="timeline">${tl}<span class="tl">${m.label}${a.history?.length ? ` · ${ago(a.history.at(-1).at)}` : ''}</span></div>
+            ${mailLine(a)}
             <textarea class="app-notes" data-notes="${a.id}" rows="1" placeholder="Add a note (recruiter name, test date, link…)">${esc(a.notes || '')}</textarea>
-            <div class="app-actions">${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}<button class="del" data-del="${a.id}">Delete</button></div>
+            <div class="app-actions">${a.resume ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.resume)}" target="_blank" title="The resume you sent">📄 Resume sent</a>` : ''}${a.coverLetter ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.coverLetter)}" target="_blank">✉️ Cover letter</a>` : ''}${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}<button class="del" data-del="${a.id}">Delete</button></div>
           </div>`;
         })
         .join('')
     : `<div class="empty"><span class="big">🗂</span>${apps.length ? 'Nothing matches this filter.' : 'No applications yet. Submit one, or tick jobs on the Job board and press “Save to tracker”.'}</div>`;
 }
+
+// The last recruiting email about this application, or a nudge when nothing has come back for a while.
+const DAY = 86400_000;
+function mailLine(a) {
+  const last = (a.mail || []).at(-1);
+  if (last) return `<div class="app-mail k-${esc(last.kind)}" title="${esc(last.evidence || '')}">📬 ${esc(KIND_LABEL[last.kind] || last.kind)} · “${esc(String(last.subject || '').slice(0, 70))}” · ${ago(last.date)}</div>`;
+  const days = Math.floor((Date.now() - new Date(a.appliedAt || a.createdAt)) / DAY);
+  if (a.status === 'applied' && days >= 12) return `<div class="app-mail k-quiet">⏳ No reply in ${days} days: consider a follow-up</div>`;
+  return '';
+}
+const KIND_LABEL = { rejected: 'Rejected', interview: 'Interview invite', assessment: 'Assessment', offer: 'Offer', applied: 'Application received' };
+
+// Rejections and responses at a glance: what happens to your applications, and at which stage you're stopped.
+function renderInsights(apps) {
+  const sent = apps.filter((a) => a.status !== 'saved');
+  if (!sent.length) return ($('#trackInsights').innerHTML = '');
+  const responded = sent.filter((a) => (a.mail || []).some((m) => m.kind !== 'applied') || !['applied', 'saved'].includes(a.status));
+  const interviews = sent.filter((a) => (a.history || []).some((h) => /interview|hr|offer|accepted/.test(h.status)));
+  const rejected = sent.filter((a) => a.status === 'rejected');
+  const days = rejected.map((a) => (new Date(a.rejectedAt || a.updatedAt) - new Date(a.appliedAt || a.createdAt)) / DAY).filter((d) => d >= 0).sort((x, y) => x - y);
+  const median = days.length ? Math.round(days[Math.floor(days.length / 2)]) : null;
+  const stage = {};
+  for (const a of rejected) {
+    const before = [...(a.history || [])].reverse().find((h) => h.status !== 'rejected')?.status || 'applied';
+    const k = /interview|hr/.test(before) ? 'after an interview' : before === 'assessment' ? 'after the assessment' : 'at screening';
+    stage[k] = (stage[k] || 0) + 1;
+  }
+  const pct = (n) => `${Math.round((100 * n) / sent.length)}%`;
+  const quiet = sent.filter((a) => a.status === 'applied' && !(a.mail || []).length && Date.now() - new Date(a.appliedAt || a.createdAt) > 12 * DAY).length;
+  $('#trackInsights').innerHTML = `<div class="ins"><b>${pct(responded.length)}</b><span>heard back</span></div><div class="ins"><b>${pct(interviews.length)}</b><span>reached interview</span></div><div class="ins"><b>${rejected.length}</b><span>rejected${median != null ? ` · median ${median} d` : ''}</span></div><div class="ins"><b>${quiet}</b><span>no reply 12+ d</span></div>
+    ${rejected.length ? `<p class="hint">Rejected ${Object.entries(stage).map(([k, n]) => `${n} ${k}`).join(', ')}.${stage['at screening'] > rejected.length / 2 ? ' Most stop at screening: tailoring and keyword match matter most here.' : ''}</p>` : ''}`;
+}
+
+// ---------- Gmail outcomes ----------
+async function traceGmail({ quiet = false } = {}) {
+  if (!quiet) $('#traceOut').innerHTML = '<p class="hint">Reading your Gmail for application updates…</p>';
+  $('#traceCard').hidden = false;
+  const r = await api('/api/applications/trace', { method: 'POST', body: { apply: true } }).catch((e) => ({ error: e.message }));
+  if (r.error) {
+    $('#traceOut').innerHTML = `<p class="hint">${esc(r.error)}</p>`;
+    return;
+  }
+  await chrome.storage.local.set({ lastTrace: Date.now(), lastTraceResult: r });
+  await loadTracker();
+  renderTrace(r);
+}
+function renderTrace(r) {
+  state.trace = r;
+  const row = (u, buttons = '') => `<div class="item ${u.kind === 'rejected' ? 'bad' : u.kind === 'offer' || u.kind === 'interview' ? '' : 'warn'}"><div class="q">${esc(u.company || u.from || '?')}${u.title ? ` · ${esc(u.title.slice(0, 50))}` : ''} <span class="tag ${u.kind === 'rejected' ? 'err' : u.kind === 'applied' ? 'review' : 'done'}">${esc(KIND_LABEL[u.kind] || u.kind)}</span> ${buttons}</div><div class="v">“${esc(u.evidence || u.subject)}”<span class="src">${esc(u.subject.slice(0, 70))} · ${ago(u.date)}</span></div></div>`;
+  const applied = r.applied || [];
+  const pending = (r.updates || []).filter((u) => u.change && !u.confident);
+  const added = new Set((state.apps || []).flatMap((a) => (a.mail || []).map((m) => m.id)));
+  const untracked = (r.unmatched || []).filter((u) => !added.has(u.mailId));
+  $('#traceMeta').textContent = `${r.checked} emails checked · ${ago(Date.now())}`;
+  $('#traceOut').innerHTML = [
+    applied.length ? `<div class="page">Updated (${applied.length})</div>${applied.map((u) => row({ ...u, title: `${STATUS[u.from_status]?.label || u.from_status} → ${STATUS[u.to_status]?.label || u.to_status}` }, `<button class="btn ghost sm" data-undo="${esc(u.appId)}" data-to="${esc(u.from_status)}">Undo</button>`)).join('')}` : '',
+    pending.length ? `<div class="page">Check these (${pending.length})</div>${pending.map((u) => row(u, `<button class="btn ghost sm" data-confirm="${esc(u.appId)}" data-to="${esc(u.to_status)}" data-mail="${esc(u.mailId)}">Apply</button>`)).join('')}` : '',
+    untracked.length ? `<div class="page">Not in your tracker (${untracked.length}) <button class="btn ghost sm" data-addall="1">Add all</button></div>${untracked.map((u, i) => row(u, `<button class="btn ghost sm" data-add="${i}">Add</button>`)).join('')}` : '',
+    !applied.length && !pending.length && !untracked.length ? '<p class="hint">Nothing new: your tracker matches your inbox.</p>' : '',
+  ].join('');
+  state.untracked = untracked;
+}
+const TO_STATUS_UI = { rejected: 'rejected', interview: 'interview1', assessment: 'assessment', offer: 'offer', applied: 'applied' };
+async function addFromMail(u) {
+  const a = await api('/api/applications', { method: 'POST', body: { title: u.title || '(role from email)', company: u.company || u.from, status: TO_STATUS_UI[u.kind] || 'applied', notes: `From Gmail: ${u.subject}` } });
+  await api(`/api/applications/${a.id}`, { method: 'PATCH', body: { mail: { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence } } });
+}
+$('#traceOut').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    if (b.dataset.undo) await patchApp(b.dataset.undo, { status: b.dataset.to });
+    if (b.dataset.confirm) {
+      const u = state.trace.updates.find((x) => x.mailId === b.dataset.mail);
+      await patchApp(b.dataset.confirm, { status: b.dataset.to, mail: { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence } });
+    }
+    if (b.dataset.add) await addFromMail(state.untracked[Number(b.dataset.add)]);
+    if (b.dataset.addall) for (const u of state.untracked) await addFromMail(u);
+    b.textContent = '✓';
+    if (b.dataset.add || b.dataset.addall) {
+      await loadTracker();
+      renderTrace(state.trace);
+    }
+  } catch (err) {
+    toast(err.message, true);
+    b.disabled = false;
+  }
+});
+on('#traceGmail', () => traceGmail());
+on('#reportForm', async () => {
+  const tab = await activeTab();
+  const shot = (await callFrame(tab.id, 0, 'snapshotForm')) || {};
+  if (!shot.html) throw new Error('Could not read this page');
+  const failures = (await collectFieldErrors(tab).catch(() => [])).map((e) => ({ label: e.label, error: e.error }));
+  const r = await api('/api/report-form', { method: 'POST', body: { ...shot, failures } });
+  toast(`Saved ${r.file}: share it (or ask Claude to fix it) and it becomes a regression test`);
+  state.log.push(`<div class="page">🐞 Reported</div><div class="item"><div class="q">Saved a scrubbed copy of this form</div><div class="v">${esc(r.file)}<span class="src">no values, emails or phone numbers are in it</span></div></div>`);
+  $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+});
 
 async function patchApp(id, body) {
   const a = await api(`/api/applications/${id}`, { method: 'PATCH', body });
@@ -1623,7 +1789,8 @@ async function checkServer() {
     // Most Gemini models out of quota: say so, since AI-only questions will be slow or left for you.
     const limited = (h.resting || []).length >= 4;
     s.querySelector('.pill-text').textContent = h.usingLocalAI ? 'local AI (Gemini quota out)' : limited ? 'AI quota low' : `${h.llm.model.replace(/^gemini-/, 'gemini ')}${h.gmail ? ' · gmail ✓' : ''}`;
-    s.title = `${h.llm.provider} · ${h.llm.model} · Gmail ${h.gmail ? 'connected' : 'not connected'}${(h.resting || []).length ? ` · resting: ${h.resting.map((r) => r.model).join(', ')}` : ''}`;
+    s.title = `${h.llm.provider} · ${h.llm.model} · Gmail ${h.gmail ? 'connected' : 'not connected'} · AI requests today: ${h.ai?.calls ?? '?'}${h.ai?.failed ? ` (${h.ai.failed} failed)` : ''}${(h.resting || []).length ? ` · resting: ${h.resting.map((r) => r.model).join(', ')}` : ''}`;
+    if (h.ai) s.querySelector('.pill-text').textContent += ` · ${h.ai.calls} AI`;
     s.className = `pill ${limited && !h.usingLocalAI ? 'warn' : 'ok'}`;
     renderProfile(await api('/api/profile'));
     loadTracker();
@@ -1837,8 +2004,11 @@ on('#saveBoard', async () => {
 });
 
 on('#startQueue', async () => {
-  state.queue = state.boardJobs.filter((j) => j.selected);
-  if (!state.queue.length) throw new Error('Tick the jobs you want to apply to');
+  const picked = state.boardJobs.filter((j) => j.selected);
+  state.queue = picked.filter((j) => !matchScore(j).applied);
+  if (!picked.length) throw new Error('Tick the jobs you want to apply to');
+  if (!state.queue.length) throw new Error('You have already applied to all the ticked jobs');
+  if (picked.length > state.queue.length) toast(`Skipping ${picked.length - state.queue.length} you already applied to`);
   await openJob(0);
 });
 $('#jobList').addEventListener('change', (e) => {
@@ -1887,6 +2057,7 @@ $('#bank').addEventListener('click', async (e) => {
   renderProfile(await api('/api/profile', { method: 'PUT', body: p }));
 });
 $('#jobFilter').addEventListener('input', renderJobs);
+$('#jobSort').addEventListener('change', renderJobs);
 $('#includePremium').addEventListener('change', renderJobs);
 $('#serverUrl').addEventListener('change', async (e) => {
   SERVER = e.target.value.trim().replace(/\/$/, '') || 'http://localhost:8787';

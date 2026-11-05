@@ -60,7 +60,10 @@
       if (t) best = t;
       if (best.length > 2) break;
     }
-    return (best || clean(el.placeholder || el.name || el.id)).slice(0, 300);
+    // Workday names its fields ("formField-legalNameSection_firstName"): a readable label when the page gives none.
+    const wd = el.closest('[data-automation-id^="formField-"]')?.getAttribute('data-automation-id');
+    const wdLabel = wd && wd.replace(/^formField-/, '').replace(/.*Section_/, '').replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    return (best || wdLabel || clean(el.placeholder || el.name || el.id)).slice(0, 300);
   }
 
   function groupLabel(members) {
@@ -1188,7 +1191,9 @@
       for (let p = n.previousElementSibling, k = 0; p && k < 6; p = p.previousElementSibling, k++) {
         const h = p.matches('h1, h2, h3, h4, h5, [role="heading"]') ? p : p.querySelector?.('h2, h3, h4, h5, [role="heading"]');
         const t = clean(h?.textContent);
-        if (t && t.length < 60) return t;
+        // A field's own label ("Job Title*") is not a section heading, even when the site marks it up as one.
+        if (!t || t.length >= 60 || /\*\s*$/.test(t) || h.matches('label') || h.querySelector('label, input, select, textarea') || h.closest('label')) continue;
+        return t;
       }
     }
     return '';
@@ -1456,6 +1461,7 @@
     if (typeof value === 'string' && dateParts(value) && sameDate(actual, value)) return true;
     if (typeof value === 'boolean') return actual === String(value) || (value === false && !actual);
     if (box?.dataset.jfPicked) return true; // multi-select prompt: counted as it picked
+    if (box && HEAR_RE.test(labelFor(box)) && clean(actual)) return true; // "How did you hear": a fallback like LinkedIn / Other is fine
     if (Array.isArray(value)) return value.every((v) => sameValue(actual, v) || norm(actual).includes(norm(v)));
     return sameValue(actual, value);
   };
@@ -1849,6 +1855,33 @@
     return scrollY;
   }
 
+  // ---------- report this form ----------
+  // A privacy-scrubbed copy of the form for a regression test: its structure, labels, options and the site's errors,
+  // with every value removed and any email / phone / link in the text replaced. Never includes passwords or files.
+  function snapshotForm() {
+    const SCRUB = (t) => String(t).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, 'name@example.com').replace(/\+?\d[\d\s-]{8,}\d/g, '0000000000').replace(/https?:\/\/\S+/g, 'https://example.com');
+    const copy = document.body.cloneNode(true);
+    copy.querySelectorAll('script, noscript, iframe, object, embed, link, meta, .jf-badge, [data-jf-ignore]').forEach((n) => n.remove());
+    copy.querySelectorAll('img, source, video, audio').forEach((n) => { n.removeAttribute('src'); n.removeAttribute('srcset'); });
+    copy.querySelectorAll('svg').forEach((n) => n.replaceChildren());
+    copy.querySelectorAll('input').forEach((n) => { n.removeAttribute('value'); n.removeAttribute('checked'); if (n.type === 'password') n.setAttribute('type', 'password'); });
+    copy.querySelectorAll('textarea').forEach((n) => (n.textContent = ''));
+    copy.querySelectorAll('option').forEach((n) => n.removeAttribute('selected'));
+    copy.querySelectorAll('[contenteditable]').forEach((n) => n.replaceChildren());
+    copy.querySelectorAll('*').forEach((n) => {
+      for (const a of [...n.attributes]) {
+        if (/^on/i.test(a.name) || /^(href|action|style|data-jf-id|data-jf-custom|data-jf-other|data-jf-picked)$/i.test(a.name)) n.removeAttribute(a.name);
+        else if (/^(title|aria-label|placeholder|alt|data-\w+)$/i.test(a.name)) n.setAttribute(a.name, SCRUB(a.value));
+      }
+    });
+    const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) t.nodeValue = SCRUB(t.nodeValue);
+    // Chips / selected items / displayed values the site rendered from your answers: emptied.
+    copy.querySelectorAll('[data-automation-id="selectedItem"], [class*="singleValue" i], [class*="multiValue" i]').forEach((n) => n.replaceChildren());
+    const html = `<!doctype html>\n<html>\n<head><meta charset="utf-8" /><title>Report: ${SCRUB(document.title).replace(/</g, '')}</title>\n<!-- Saved by Auto Job "Report this form" from ${location.hostname}${location.pathname.replace(/[?#].*$/, '')}. Values removed. -->\n</head>\n<body>\n${copy.innerHTML.slice(0, 900_000)}\n</body>\n</html>\n`;
+    return { html, host: location.hostname, path: location.pathname, errors: errorTexts().map(SCRUB) };
+  }
+
   // Signature of the current form step, to tell whether Next actually moved on.
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
@@ -1886,6 +1919,7 @@
     checkValue,
     boxValue,
     pageLinks,
+    snapshotForm,
     jumpTo,
     fieldError,
     pageMetrics,

@@ -392,6 +392,9 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 
 ### Jobs tab: job boards and the queue
 
+- **Match score:** every posting gets a 0–100 score from your target roles, skills in the title, seniority against your experience ("Senior", "5+ years" are marked down for a fresher), internship vs full-time and whether you already applied. The list sorts best match first (or *As found*); hover a score for the reasons.
+- **Safe queue:** **Start applying** skips jobs you already applied to, pauses 20–40 s between applications, and stops at 25 a day.
+
 1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
 2. **Scan all my boards** opens each one and merges every posting into one list: *Role · Company · location · pay*.
 3. Filter titles, tick the jobs you want (**Select all shown** helps), then press **Start applying**. Auto Job opens each job, applies, fills and waits for your review. **Skip this job** moves on.
@@ -412,6 +415,23 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 
 ### Tracker tab
 
+**📬 Check Gmail** reads your inbox (read-only) for what happened to your applications, and updates the tracker:
+
+| Email says | Tracker | Example wording it understands |
+|---|---|---|
+| ✗ **Rejection** | *Rejected*, with the date and the sentence that says so | "decided to move forward with other candidates", "will not be moving forward", "not been shortlisted", "the position has been filled" |
+| ✓ **Interview** | *Interview 1* | "invite you to an interview", "schedule a call", "technical screening", "your application was accepted: schedule an interview" |
+| 🧪 **Assessment** | *Assessment* | "invitation to online assessment", "assignment round", HackerRank / Codility test links |
+| 🎉 **Offer** | *Offer* | "pleased to extend an offer", "offer letter" |
+| 📨 **Received** | kept as evidence | "thank you for applying", "application confirmation" |
+
+- **Careful matching:** each email is matched to a tracked job by the company in the sender, subject and body, plus the role title. Only confident matches update a card; the rest are listed for you to **Apply** with one click, and every change has **Undo**.
+- **Traps it avoids:** "this email is **not an offer** of employment", "**if** the role requires an assessment…", newsletters and job alerts, and a rejection that opens with "thank you for applying". Statuses only move forward, but a rejection or offer always lands.
+- **Jobs you never tracked:** outcomes from applications made outside Auto Job are listed under *Not in your tracker*, with **Add** or **Add all**, so every rejection is recorded.
+- **On each card:** the latest email ("📬 Rejected · 'Update on your application' · 2 d ago", hover for the sentence), and ⏳ *No reply in N days: consider a follow-up* after 12 quiet days. **📄 Resume sent** and **✉️ Cover letter** open the exact PDFs you sent.
+- **Insights:** how many applications heard back, how many reached an interview, rejections with the median days to a rejection, and the stage you were stopped at (screening, assessment or interview).
+- It runs by itself when you open the Tracker, at most every 6 hours, and only reads mail newer than your first tracked application.
+
 - Statuses: **To apply → Applied → Assessment → Interview 1 / 2 / 3 → HR → Offer → Accepted**, plus **Rejected** and **Withdrawn**.
 - Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
 - Each card has a status dropdown, a timeline, notes (recruiter, test date, link) and **Open job**.
@@ -420,6 +440,7 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 ### Profile tab
 
 - **Resume import:** pick several versions (for example an AI resume and a full-stack resume). They're merged into one master profile that keeps every distinct bullet. Manual edits you made survive a re-import.
+- **Current vs permanent address:** fill *Current address / city / state / PIN* if you live somewhere else (a hostel or flat). Forms asking for a current or correspondence address get it, and permanent-address questions get your home address.
 - **Personal details:** DOB, gender, pronouns, marital status, parents' names, address, nationality, languages, 10th / 12th schooling. These are for forms that ask.
 - **Documents:** photo, signature, 10th / 12th marksheets, ID proof, address proof, PAN, degree, transcript (PDF / PNG / JPG). Upload fields that ask for one get the right file. A "passport size photo" always gets your photo, never your ID.
 - **Standard answers:** work authorisation, sponsorship, notice period (text and days), expected and current CTC (text and annual number), relocation, fresher status, EEO answers, how you heard about jobs, government employment.
@@ -552,6 +573,10 @@ What makes it work on real portals and not only on simple forms:
 | **Errors that only show visually** | The visual check screenshots the page and Gemini points at the field. |
 | **Boxes that ignore every scripted value** | Retyped with real keystrokes through Chrome's debugger. |
 
+**🐞 Report this form:** when a page doesn't fill well, press it under *Fill form*. It saves a privacy-scrubbed copy of the form (structure, labels, options and the site's errors; **no values**, and emails, phone numbers and links replaced) to `server/test/reports/`, which git ignores. Share that file and it becomes a regression test, so the fix stays fixed.
+
+**Characters a site forbids** (Workday: `< > [ ] " { } \`): descriptions are typed with single quotes, and when a site names forbidden characters, self-healing removes them and retypes.
+
 **Built against real portals:** fixes came from live applications on Workday (U.S. Bank), Lever (Acron Aviation), Phenom (GE HealthCare), PyjamaHR, Recruit CRM and Indian job boards. Each has a matching test page in `server/test/`. Greenhouse, Ashby, SmartRecruiters, iCIMS and other ATS links are recognised, and every other site gets the same generic engine.
 
 ## Answers that never depend on the AI
@@ -654,6 +679,9 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | POST | `/api/cover-letter` | Cover letter text + PDF for a job |
 | POST | `/api/answer` | Values for a list of form fields (with optional site errors) |
 | POST | `/api/answer-bank` | Remember answers from a submitted form |
+| POST | `/api/applications/trace` | Read Gmail for outcomes (rejections, interviews, assessments, offers) and update the tracker |
+| POST | `/api/report-form` | Save a scrubbed form snapshot as a test page |
+| GET | `/api/resumes/:name` | The exact resume / cover letter PDF you sent |
 | POST | `/api/research` | Company research for a job, with sources (saved a week) |
 | POST | `/api/vision` | Screenshots of a filled page → the problems Gemini sees on it |
 | GET / POST / DELETE | `/api/documents[/:kind]` | List, upload, fetch or remove documents |
@@ -684,6 +712,7 @@ Auto-Job/
 │   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude, quota handling
 │   │   ├── mail.js            Gmail IMAP / SMTP
 │   │   ├── hackathons.js      8 hackathon platforms
+│   │   ├── outcomes.js        Gmail outcome tracing: rejections, interviews, assessments, offers
 │   │   ├── research.js        company research: website, Wikipedia / Wikidata, news, sources
 │   │   └── store.js           profile, documents, tracker on disk
 │   ├── test/                  test forms that copy real portals
@@ -724,7 +753,7 @@ All paths are on `http://localhost:8787`.
 cd server && npm test
 ```
 
-It prints each page with how many fields were filled and any that weren't, and exits with an error if something regressed. Pass page names to run only some, for example `node test/run-all.mjs tricky workday`. `heal.html` and `strict.html` exercise the panel's self-healing and real typing, so test those from the side panel.
+GitHub runs the same tests on every push (`.github/workflows/test.yml`) with a made-up demo profile and no AI key. It prints each page with how many fields were filled and any that weren't, and exits with an error if something regressed. Pass page names to run only some, for example `node test/run-all.mjs tricky workday`. `heal.html` and `strict.html` exercise the panel's self-healing and real typing, so test those from the side panel.
 
 ## Troubleshooting
 

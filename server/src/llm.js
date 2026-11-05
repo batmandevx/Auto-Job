@@ -15,6 +15,12 @@ export function describeProvider() {
 // heavy: true marks quality-critical calls (resume parsing / tailoring) that may use a stronger model.
 // images: base64 JPEG screenshots, for the visual page check (Gemini only).
 // search: Gemini answers with Google Search grounding; the result gets a `_sources` list ({ title, url }).
+// How many AI requests today (resets at midnight), shown in the panel so a free quota doesn't run out by surprise.
+const usage = { day: new Date().toDateString(), calls: 0, failed: 0 };
+export function aiUsage() {
+  if (usage.day !== new Date().toDateString()) Object.assign(usage, { day: new Date().toDateString(), calls: 0, failed: 0 });
+  return { calls: usage.calls, failed: usage.failed };
+}
 export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs, images = [], search = false } = {}) {
   const p = provider();
   let text;

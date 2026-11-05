@@ -6,9 +6,10 @@ import cors from 'cors';
 import multer from 'multer';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { chatJSON, describeProvider, geminiStatus, usedFallbackRecently } from './llm.js';
+import { chatJSON, describeProvider, geminiStatus, usedFallbackRecently, aiUsage } from './llm.js';
 import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM, VISION_SYSTEM } from './prompts.js';
 import { researchCompany, researchFor } from './research.js';
+import { traceOutcomes } from './outcomes.js';
 import { tailorResume, withoutGradSentences, crisp, cleanRole } from './tailor.js';
 import { profileSkillsInJD } from './keywords.js';
 import { listHackathons } from './hackathons.js';
@@ -40,7 +41,7 @@ const route = (fn) => (req, res) =>
     res.status(500).json({ error: e.message });
   });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, llm: describeProvider(), resting: geminiStatus(), usingLocalAI: usedFallbackRecently(), gmail: mailConfigured(), hasProfile: !!getProfile() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, llm: describeProvider(), resting: geminiStatus(), usingLocalAI: usedFallbackRecently(), gmail: mailConfigured(), hasProfile: !!getProfile(), ai: aiUsage() }));
 
 // Upload one or more resume versions (PDF / DOCX / TXT) and merge them into one structured profile.
 async function resumeText(file) {
@@ -274,6 +275,45 @@ app.get('/api/hackathons', route(async (req, res) => res.json(await listHackatho
 app.get('/api/applications', (req, res) => res.json({ statuses: STATUSES, items: listApplications() }));
 app.post('/api/applications', (req, res) => res.json(upsertApplication(req.body)));
 app.post('/api/applications/bulk', (req, res) => res.json((req.body.items || []).map((a) => upsertApplication(a))));
+// The exact resume / cover letter PDF you sent with an application (newest copy with that name).
+app.get('/api/resumes/:name', (req, res) => {
+  const name = path.basename(String(req.params.name));
+  const hit = fs.readdirSync(RESUME_DIR).filter((f) => f === name || f.endsWith(`_${name}`)).sort().pop();
+  if (!hit) return res.status(404).json({ error: 'Not found' });
+  res.type('application/pdf').sendFile(path.join(RESUME_DIR, hit));
+});
+
+// "Report this form": a scrubbed copy of a form that didn't fill well, saved as a test page, plus what failed.
+app.post('/api/report-form', (req, res) => {
+  const { html = '', host = 'site', failures = [], errors = [] } = req.body || {};
+  if (!/^<!doctype html>/i.test(html) || html.length > 1_200_000) return res.status(400).json({ error: 'Not a form snapshot' });
+  const dir = path.resolve(import.meta.dirname, '../test/reports');
+  fs.mkdirSync(dir, { recursive: true });
+  const name = `${String(host).replace(/[^a-z0-9.-]+/gi, '-').replace(/^www\./, '')}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
+  const notes = `<!-- What Auto Job saw fail:\n${[...failures.map((f) => `  field: ${String(f.label).slice(0, 120)} -> ${String(f.error).slice(0, 160)}`), ...errors.map((e) => `  page: ${String(e).slice(0, 160)}`)].join('\n').replace(/--/g, '-')}\n-->\n`;
+  fs.writeFileSync(path.join(dir, `${name}.html`), html.replace(/<\/head>/i, `${notes}</head>`));
+  res.json({ ok: true, file: `server/test/reports/${name}.html`, url: `/test/reports/${name}.html` });
+});
+
+// Trace outcomes from Gmail: rejections, interviews, assessments, offers, confirmations. apply=true moves the
+// confident ones (company and role matched); the rest come back for you to confirm.
+app.post('/api/applications/trace', route(async (req, res) => {
+  const apps = listApplications().filter((a) => a.status !== 'saved');
+  if (!apps.length) return res.json({ checked: 0, updates: [], unmatched: [], applied: [] });
+  const oldest = Math.min(...apps.map((a) => new Date(a.appliedAt || a.createdAt).getTime()).filter(Boolean));
+  const since = Math.max(oldest - 2 * 86400_000, Date.now() - 180 * 86400_000);
+  const out = await traceOutcomes(apps, { since });
+  const applied = [];
+  for (const u of out.updates) {
+    const mail = { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence };
+    if (req.body?.apply && u.confident && u.change) {
+      updateApplication(u.appId, { status: u.to_status, mail });
+      applied.push(u);
+    } else if (req.body?.apply && u.confident) updateApplication(u.appId, { mail }); // same status: just keep the email as evidence
+  }
+  res.json({ ...out, applied });
+}));
+
 app.patch('/api/applications/:id', (req, res) => {
   const a = updateApplication(req.params.id, req.body);
   if (!a) return res.status(404).json({ error: 'Not found' });

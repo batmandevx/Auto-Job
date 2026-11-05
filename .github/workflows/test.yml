@@ -37,5 +37,5 @@ jobs:
       - if: always()
         run: |
           { echo '### Test forms'; echo '```'; cat results.txt 2>/dev/null; echo '```'; echo '### Server log'; echo '```'; tail -40 server.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          grep -E "^===|✗|! JS|EXCEPTION|PANEL" results.txt 2>/dev/null | head -40 | while IFS= read -r l; do echo "::notice::$l"; done
+          tail -30 results.txt 2>/dev/null | while IFS= read -r l; do echo "::notice::$l"; done
           tail -15 server.log | while IFS= read -r l; do echo "::notice::server: $l"; done

@@ -418,8 +418,15 @@ const starless = (l) => String(l).replace(/\s*[*✱]+\s*$/, '');
 
 // Upload the documents a page asks for (resume, cover letter, ID…), adding a result row for each.
 async function uploadFiles(tab, files, rows, missingRequired) {
+  const used = new Set();
   for (const f of files) {
     const kind = fileKind(f, files.length);
+    // One copy of each document per page: two optional "Additional document" boxes don't both get the cover letter.
+    if (used.has(kind) && kind !== 'other' && !f.required) {
+      rows.push(`<div class="item"><div class="q">📎 ${esc(starless(f.label).slice(0, 100))} <span class="src">${kind}</span></div><div class="v"><span class="tag review">left empty</span> already attached above</div></div>`);
+      continue;
+    }
+    used.add(kind);
     const doc = await uploadFor(kind).catch((e) => ({ error: e.message }));
     let tag;
     if (doc?.base64) {
@@ -567,6 +574,12 @@ async function fillPage(pageNo = 1) {
     }
   }
 
+  // Account creation: password boxes are always yours (Auto Job never types passwords).
+  const pw = (await callAll(tab.id, 'focusPassword').catch(() => [])).find((f) => f.result?.waiting);
+  if (pw) {
+    rows.push(`<div class="item warn"><div class="q">🔑 Password <span class="tag review">create it yourself</span></div><div class="v">Auto Job never types passwords. Your cursor is in the box: let Chrome suggest a strong password (right-click → Suggest password), then fill${pw.result.count > 1 ? ' the confirmation box too and' : ''} press Continue.</div></div>`);
+    missingRequired.push('account password (create it yourself)');
+  }
   // A CAPTCHA on the page: put your cursor in it and wait for you (the run stops here until you've typed it).
   const cap = (await callAll(tab.id, 'focusCaptcha').catch(() => [])).find((f) => f.result?.waiting);
   if (cap) {

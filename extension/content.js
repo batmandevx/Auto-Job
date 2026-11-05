@@ -103,6 +103,15 @@
   function captchaFields() {
     return deepAll('input:not([type=hidden])').filter((e) => shown(e) && CAPTCHA_RE.test(`${labelFor(e)} ${e.placeholder} ${e.name} ${e.id}`));
   }
+  // Account passwords are yours to type (Chrome can suggest a strong one); point at the empty one.
+  function focusPassword() {
+    const el = deepAll('input[type="password"]').find((e) => shown(e) && !e.value);
+    if (!el) return { waiting: false };
+    el.scrollIntoView({ block: 'center' });
+    mark(el, true);
+    el.focus();
+    return { waiting: true, count: deepAll('input[type="password"]').filter((e) => shown(e) && !e.value).length };
+  }
   function focusCaptcha() {
     const el = captchaFields().find((e) => !clean(e.value));
     if (!el) return { waiting: false };
@@ -248,13 +257,15 @@
       if (i < 0 || scoreOption(texts[i], v) < 55) i = bestMatch(texts, q);
       if (i >= 0 && scoreOption(texts[i], q) >= 55) return { opts, i };
     }
-    // The page says to choose "Other" when your school isn't listed.
+    // Your school isn't listed: the page's own fallback ("School Not Listed", "Other"…).
     if (/school|university|college|institut/i.test(label)) {
-      await typeInto(el, 'Other');
-      press(el, 'Enter');
-      const opts = await waitOptions(el, 2500);
-      const i = optionTexts(opts).findIndex((t) => /^other\b/i.test(t));
-      if (i >= 0) return { opts, i, other: true };
+      for (const q of ['School Not Listed', 'Not Listed', 'Other']) {
+        await typeInto(el, q);
+        press(el, 'Enter');
+        const opts = await waitOptions(el, 2500);
+        const i = optionTexts(opts).findIndex((t) => /^(school )?not listed|^others?\b|^none of the above/i.test(t));
+        if (i >= 0) return { opts, i, other: true };
+      }
     }
     return null;
   }
@@ -420,6 +431,8 @@
       const type = tag === 'input' ? (el.type || 'text').toLowerCase() : tag;
       if (tag === 'input' && SKIP_TYPES.has(type)) continue;
       if (role === 'listbox' && el.closest('[role="combobox"], select')) continue;
+      // An open search popup next to its search box (Workday prompts) is part of that field, not a field of its own.
+      if (role === 'listbox' && (el.querySelector('[data-automation-id="promptOption"]') || el.parentElement?.querySelector(':scope > input[role="combobox"], :scope > input[data-automation-id="searchBox"]'))) continue;
       if (role === 'option') continue;
       if (!usable(el)) continue;
       if (el.closest('[aria-hidden="true"]') && type !== 'file') continue;
@@ -502,11 +515,26 @@
     }
 
     // A separate "Country Phone Code" field (Workday): the phone number goes in without the code.
-    if (fields.some((f) => /country\s*(phone\s*)?code|dial(l)?ing\s*code|phone\s*country|isd/i.test(f.label))) for (const f of fields) if (/phone|mobile|contact\s*(no|number)/i.test(f.label) && !/code|ext/i.test(f.label)) f.codeBeside = true;
+    // ("Mobile Phone Number With Area Code" is the number itself, not the code box.)
+    const CODE_BOX = /country\s*(phone\s*)?code|dial(l)?ing\s*code|phone\s*country|\bisd\b/i;
+    if (fields.some((f) => CODE_BOX.test(f.label))) for (const f of fields) if (/phone|mobile|contact\s*(no|number)/i.test(f.label) && !CODE_BOX.test(f.label) && !/\bext/i.test(f.label)) f.codeBeside = true;
+    // A full postal address (street + postal code on the page): every part comes from your profile together, even
+    // when the site prefilled some of it from your resume (a Lucknow street with a Chennai city would be wrong).
+    const ADDR = /street|address\s*(line)?\s*[12]?\b|^address\b|^city\b|^town\b|^state\b|province|postal|zip|pin\s*code|pincode/i;
+    const base = (f) => String(f.label).split('›').pop();
+    if (fields.some((f) => /street|address/i.test(base(f))) && fields.some((f) => /postal|zip|pin\s*code|pincode/i.test(base(f)))) for (const f of fields) if (ADDR.test(base(f)) && !/e-?mail|current location|city of birth/i.test(base(f))) f.filled = false;
     // Phone extensions are for office desk lines: never filled (and never asked of the AI).
     for (let i = fields.length - 1; i >= 0; i--) if (/phone\s*ext|^ext(ension)?\b|\bextension\b/i.test(fields[i].label) && !fields[i].required) fields.splice(i, 1);
     mergeSplitCodeBoxes(fields);
     labelRepeatedSections(fields);
+    // Each Work Experience entry carries the company already in it, so answers go to that role even when the site's
+    // own resume import put the entries in a different order than your profile.
+    for (const f of fields) {
+      if (!f.entry || !f.section) continue;
+      const co = fields.find((x) => x.section === f.section && x.entry === f.entry && /company|employer|organi[sz]ation/i.test(base(x)) && !/title|position/i.test(base(x)));
+      const shown = co && clean(readFieldValue(co.id));
+      if (shown) f.entryCompany = shown.slice(0, 80);
+    }
     return { url: location.href, fields, next: nextLabel(), submit: submitLabel(), errors: errorTexts(), checkEmail: checkEmailPage() };
   }
 
@@ -894,6 +922,20 @@
 
     if (el.type === 'checkbox' || role === 'checkbox' || role === 'switch') {
       if (isChecked(el) !== truthy(value)) el.click();
+    } else if (kind && Array.isArray(value) && (el.getAttribute('data-automation-id') === 'searchBox' || el.closest('[data-automation-id="multiselectInputContainer"]'))) {
+      // A multi-select prompt (Workday "Type to Add Skills"): search and pick each item; ones not in their list are skipped.
+      let picked = 0;
+      for (const item of value.slice(0, 15)) {
+        const r = await searchWithEnter(el, String(item));
+        if (r && !r.other) {
+          clickLikeUser(r.opts[r.i]);
+          picked++;
+          await sleep(350);
+        }
+      }
+      close(el);
+      status = picked ? 'filled' : `none of these are in the site's list: ${value.slice(0, 3).join(', ')}…`;
+      if (picked) el.dataset.jfPicked = String(picked);
     } else if (kind) {
       status = await chooseFromList(el, Array.isArray(value) ? value[0] : value, kind === 'combobox');
     } else if (el.tagName === 'SELECT') {
@@ -1135,7 +1177,7 @@
   }
 
   // "Work Link / Online Portfolio [+]": rows of link boxes. Press the row's "+" until there are `want` boxes.
-  const LINK_RE = /portfolio|personal\s*(web)?site|^website|work\s*links?|^(other\s*)?links?\b|profile\s*links?|social\s*(links?|profiles?)/i;
+  const LINK_RE = /portfolio|personal\s*(web)?site|^website|^url\b|work\s*links?|^(other\s*)?links?\b|profile\s*links?|social\s*(links?|profiles?)/i;
   const linkInputs = () => deepAll('input').filter((e) => ['text', 'url'].includes(e.type) && usable(e) && LINK_RE.test(labelFor(e)) && !/linked\s*in|git\s*hub/i.test(labelFor(e)));
   function plusButtonNear(el) {
     let n = el.parentElement;
@@ -1329,11 +1371,12 @@
     const box = findById(id);
     const part = box && dateSection(box);
     if (part) return !!datePart(value, part) && Number(actual) === Number(datePart(value, part));
-    if (box?.dataset.jfOther === '1' && /^other\b/i.test(String(actual).trim())) return true; // the "Other" fallback took
+    if (box?.dataset.jfOther === '1' && /^(school )?not listed|^others?\b|^none of the above/i.test(String(actual).trim())) return true; // the "not listed" fallback took
     const one = groups.get(id)?.length === 1 ? groups.get(id)[0] : !groups.get(id) && box && (box.type === 'checkbox' || /checkbox|switch/.test(box.getAttribute('role') || '')) ? box : null;
     if (typeof value === 'boolean' && one) return isChecked(one) === value; // a single checkbox: ticked or not
     if (typeof value === 'string' && dateParts(value) && sameDate(actual, value)) return true;
     if (typeof value === 'boolean') return actual === String(value) || (value === false && !actual);
+    if (box?.dataset.jfPicked) return true; // multi-select prompt: counted as it picked
     if (Array.isArray(value)) return value.every((v) => sameValue(actual, v) || norm(actual).includes(norm(v)));
     return sameValue(actual, value);
   };
@@ -1749,6 +1792,7 @@
     lostValues,
     openFixCard,
     focusCaptcha,
+    focusPassword,
     prepareType,
     badgeFields,
     clearBadges,

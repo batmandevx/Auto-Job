@@ -4,10 +4,10 @@ import { bankKey } from './store.js';
 import { withoutGradSentences } from './tailor.js';
 
 const POSTGRAD_TEXT = /post\s*-?\s*graduat\w*\s*(year|date|passing)|year\s*of\s*post\s*-?\s*graduat/i;
-const TEXTLIKE = ['text', 'email', 'tel', 'url', 'search', 'date', 'number', 'combobox', ''];
+const TEXTLIKE = ['text', 'email', 'tel', 'url', 'search', 'date', 'number', 'combobox', 'tags', ''];
 const first = (p) => p.name.split(/\s+/)[0];
 const last = (p) => p.name.split(/\s+/).slice(1).join(' ');
-const LINK_LABEL = /portfolio|personal\s*(web)?site|^website|other\s*(website|url|link)|your\s*website|work\s*links?|^(other\s*)?links?\b|profile\s*links?|social\s*(links?|profiles?)/i;
+const LINK_LABEL = /portfolio|personal\s*(web)?site|^website|^url\b|other\s*(website|url|link)|your\s*website|work\s*links?|^(other\s*)?links?\b|profile\s*links?|social\s*(links?|profiles?)/i;
 // Degree lists rarely have your exact degree ("B.Tech" in a list with only "Bachelor of Engineering", "Bachelors"…):
 // try the closest equivalents in order. Education-level lists get the level ("Bachelor's degree", "Undergraduate").
 const DEGREE_LABEL = /^degree\b|degree\s*(type|name|obtained|pursued)|highest\s*(degree|qualification)|^qualification$/i;
@@ -18,7 +18,7 @@ const linkIndex = (f) => Number((clean(String(f.label).split('›').pop()).match
 // Spoken languages ("English, Hindi") and how well: Hindi native, English fluent.
 const spoken = (p) => String(p.personal?.languages || '').split(/\s*[,;/]\s*|\s+and\s+/i).filter(Boolean);
 const LANG_NAME = /^(spoken\s*)?language(\s*name)?$/i;
-const LANG_LEVEL = /proficiency|fluency|^level$|language\s*level|how well/i;
+const LANG_LEVEL = /proficiency|fluency|^level$|^overall$|language\s*level|how well|^(spoken|written|reading|writing|speaking)$/i;
 const nativeLang = (lang) => /hindi/i.test(lang);
 const LEVEL_WORDS = {
   native: ['native', 'native or bilingual', 'native or bilingual proficiency', 'native speaker', 'mother tongue', 'bilingual', 'fluent', 'expert', 'advanced'],
@@ -28,7 +28,14 @@ const LEVEL_WORDS = {
 const HEAR_LABEL = /how did you (hear|find|learn|come)|where did you (hear|find|see)|^(source|referral source)(\s*of\s*(application|referral|hire))?$|how did you (come|get) to know|hear about (us|this)|know about (the|this) (opportunity|job|role|position)/i;
 const SOURCE_LADDER = ['linkedin', 'linkedinjobs', 'companywebsite', 'careerswebsite', 'careersite', 'companycareersite', 'corporatewebsite', 'careerspage', 'jobboard', 'jobboards', 'onlinejobboard', 'jobsite', 'socialmedia', 'socialnetwork', 'internet', 'online', 'website', 'other'];
 // "S.O.", "S/O", "D/O", "C/O" read as "son of" etc.: never typed into an address.
-const worksHere = (p, job) => { const c = normT(job?.company).slice(0, 6); return c.length > 2 && (p.experience || []).some((e) => normT(e.company).includes(c)); };
+// Did you work for the company the question names ("employed by Samsung…"), or this job's company?
+const worksHere = (p, job, label = '') => (p.experience || []).some((e) => {
+  const co = normT(String(e.company || '').split(',')[0]);
+  if (co.length < 3) return false;
+  if (/\bcurrently\b/i.test(label) && !/\b(or|and) (have you )?(ever|previously|in the past)\b/i.test(label) && !/present|current|now/i.test(String(e.end || ''))) return false; // "currently employed": only a role you still hold
+  const c = normT(job?.company).slice(0, 6);
+  return normT(label).includes(co) || (c.length > 2 && co.includes(c));
+});
 // "mention full no - example 500000", "Annual CTC in INR": a plain number, not "₹12–18 LPA".
 const FULL_NUMBER = /annual|per annum|yearly|in inr|in rupees|lpa|full\s*(no|number|amount)|example\s*-?\s*\d{4,}|numbers? only|digits/i;
 // The job is outside India (from the question or the job's location): you'd need a visa there.
@@ -84,11 +91,13 @@ const RULES = [
   // (unless it is in your experience), happy to work from the posted location.
   // Only relationship *questions* ("Do you have any relatives working here?"), never "Family name" or "Spouse name".
   [/(family|relative|spouse|in-law|related to).{0,240}(relationship|related|relatives?|member|employ|work(s|ing)?|board|director|reporting)|(relationship|related|relatives?).{0,120}(family|employee|board|director|reporting|work(s|ing)? (at|for|in))/i, () => 'No'],
-  [/(currently|previously|in the past|ever).{0,60}(worked|employed|been an? (employee|contractor)).{0,80}(consult|affiliat|subsidiar|project|this company|for us|with us|any of)/i, (p, f, job) => (worksHere(p, job) ? 'Yes' : 'No')],
+  [/(currently|previously|in the past|ever).{0,60}(worked|employed|been an? (employee|contractor)).{0,80}(consult|affiliat|subsidiar|project|this company|for us|with us|any of)/i, (p, f, job) => (worksHere(p, job, f.label) ? 'Yes' : 'No')],
   // Work authorisation: you're an Indian citizen, so Yes for India, and No for other countries
   // (the answers say you hold no visa for them).
   [/legally (authori[sz]ed|eligible|permitted|allowed) to work|authori[sz]ed to work|right to work|eligible to work/i, (p, f, job) => (abroad(f, job) ? 'No' : 'Yes')],
   [/(are you )?currently (employed|working)(\?|$)|current employment status/i, (p) => yesNo(p.answers.currentlyEmployed)],
+  // "Do you have any professional licenses or certifications?": Yes / No from your profile, or the list for a text box.
+  [/(professional\s*)?licen[cs]es?\s*(or|and|\/)\s*certifications?|any (professional )?certifications?|certifications? (do you have|held)/i, (p, f) => (CHOICE.includes(f.type) ? ((p.certifications || []).length ? 'Yes' : 'No') : (p.certifications || []).join('; ') || 'None')],
   [/willing to (work|commute).{0,30}(location|office|site|city)|work from the location/i, () => 'Yes'],
   [/first\s*name|given\s*name|fname|forename/i, first],
   [/middle\s*name/i, (p) => p.personal?.middleName || null], // usually none: left empty on purpose, not asked of the AI
@@ -110,6 +119,15 @@ const RULES = [
   [/date\s*of\s*birth|\bdob\b|birth\s*date|birthday/i, (p) => p.personal.dateOfBirth],
   [/nationality|citizenship/i, (p) => p.personal.nationality],
   [/place\s*of\s*birth|birth\s*place|city\s*of\s*birth/i, (p) => p.personal.placeOfBirth],
+  [/fluent in this language/i, () => true],
+  // A skills picker ("Type to Add Skills"): your skills, the job's ones first, one item each.
+  [/^(type to add |add |your |key |technical )?skills?\b(?!.*(describe|explain|rate|years))/i, (p, f, job) => {
+    const all = [...new Set((p.skills || []).flatMap((g) => g.items || []))];
+    const jd = ` ${String(job?.description || '').toLowerCase()} `;
+    const inJd = (x) => new RegExp(`[^a-z0-9+#]${String(x).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^a-z0-9+#]`).test(jd);
+    const ranked = [...all.filter(inJd), ...all.filter((x) => !inJd(x))].slice(0, 15);
+    return ['tags', 'combobox', 'checkbox-group'].includes(f.type) ? ranked : ranked.join(', ');
+  }],
   [{ test: (l) => LANG_NAME.test(l) }, (p, f) => (/language/i.test(f.section || '') || f.entry ? spoken(p)[(f.entry || 1) - 1] : spoken(p)[0])],
   [{ test: (l) => LANG_LEVEL.test(l) }, (p, f) => (/language/i.test(`${f.section || ''} ${f.label}`) ? (nativeLang(spoken(p)[(f.entry || 1) - 1]) ? 'Native' : 'Fluent') : undefined)],
   [HEAR_LABEL, () => 'LinkedIn'],
@@ -139,7 +157,7 @@ const RULES = [
   [/(total|overall|relevant)?\s*(years?|yrs)\s*(of)?\s*(work\s*)?experience|experience\s*\(?\s*(in\s*)?years|^experience$/i, (p) => (fresher(p) ? '0' : (String(p.answers?.yearsOfExperience || '').match(/\d+(\.\d+)?/) || [])[0])],
   [/(months?)\s*(of)?\s*(work\s*)?experience|experience.*months/i, (p) => (fresher(p) ? '0' : undefined)],
   [/current\s*(annual\s*)?(ctc|salary|compensation)/i, (p, f) => (numericField(f) || FULL_NUMBER.test(f.label) ? p.answers.currentSalaryAnnual : p.answers.currentSalary)],
-  [/expected\s*(annual\s*|yearly\s*)?(ctc|salary|compensation|pay)|salary\s*expectation|desired\s*(salary|pay)|ctc.*expect/i, (p, f) => (numericField(f) || FULL_NUMBER.test(f.label) ? p.answers.expectedSalaryAnnual : p.answers.expectedSalary)],
+  [/expected\s*(annual\s*|yearly\s*)?(ctc|salary|compensation|pay)|salary\s*expectations?|desired\s*(total\s*)?(annual\s*)?(salary|pay|compensation|ctc)|ctc.*expect/i, (p, f) => (numericField(f) || FULL_NUMBER.test(f.label) ? p.answers.expectedSalaryAnnual : p.answers.expectedSalary)],
 ];
 
 // "Class 10 percentage", "12th board", "Year of passing Class XII", "HSC school name"...
@@ -201,15 +219,16 @@ const EXP_SECTION = /experience|employment|work history|positions?|jobs?/i;
 const isPresent = (end) => /present|current|now|ongoing/i.test(String(end || ''));
 function experienceValue(field, profile) {
   const last = clean(String(field.label).split('›').pop()).replace(/\s*\((month|year|day)\)$/i, '');
-  const jobLabel = last.length <= 40 && !/ctc|cost to|salary|compensation/i.test(last) && /job\s*title|position\s*title|^title$|designation|^(company|employer)(\s*name)?\W*$|currently work|role description/i.test(last);
+  const jobLabel = last.length <= 60 && !/ctc|cost to|salary|compensation/i.test(last) && /job\s*title|position\s*title|^title$|designation|^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer)(\s*name)?\W*$|currently work|role description/i.test(last);
   if (!EXP_SECTION.test(field.section || '') && !jobLabel) return undefined;
   if (/years|total|how many|months of/i.test(last)) return undefined;
-  const e = profile.experience?.[(field.entry || 1) - 1];
+  const byCompany = field.entryCompany && (profile.experience || []).find((x) => { const a = normT(String(x.company || '').split(',')[0]); const b = normT(field.entryCompany); return a.length > 2 && (b.includes(a) || a.includes(b)); });
+  const e = byCompany || profile.experience?.[(field.entry || 1) - 1];
   if (!e) return undefined;
   if (/currently work|current(ly)?\s*(employed|role|job)|i work here|still work/i.test(last)) return isPresent(e.end);
   if (/description|responsibilit|duties|summary|achievements?|what did you do/i.test(last)) return (e.bullets || []).map((b) => `• ${b}`).join('\n') || undefined;
   if (/job\s*title|position|^title$|designation|^role$/i.test(last)) return e.title;
-  if (/^(company|employer|organi[sz]ation)(\s*name)?\W*$|name of (the )?(company|employer)/i.test(last)) return String(e.company || '').split(',')[0].trim() || e.company;
+  if (/^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer|organi[sz]ation)(\s*name)?\W*$|name of (the )?(company|employer)/i.test(last)) return String(e.company || '').split(',')[0].trim() || e.company;
   if (/location|city/i.test(last)) return e.location || undefined;
   if (/^(from|start)|start\s*date|date\s*from/i.test(last)) return e.start;
   if (/^(to|end)\b|end\s*date|date\s*to/i.test(last)) return isPresent(e.end) ? undefined : e.end;
@@ -220,12 +239,17 @@ function ruleValue(field, profile, job) {
   const exp = experienceValue(field, profile);
   if (exp !== undefined && exp !== '') return CHOICE.includes(field.type) && field.options?.length ? field.options.find((o) => normT(o) === normT(exp)) : exp;
   const last = clean(String(field.label).split('›').pop());
-  const linkRow = LINK_LABEL.test(last) || LANG_NAME.test(last) || (LANG_LEVEL.test(last) && /language/i.test(`${field.section || ''} ${field.label}`));
+  const linkRow = LINK_LABEL.test(last) || LANG_NAME.test(last) || /fluent in this language/i.test(last) || (LANG_LEVEL.test(last) && /language/i.test(`${field.section || ''} ${field.label}`));
   if (field.entry > 1 && !linkRow) return undefined; // later entries of repeated sections: the AI maps them by order (link rows: next link)
   // Dropdowns too, as long as the profile fact is one of the real options ("2027" in a passout-year list).
   if (CHOICE.includes(field.type) && field.options?.length) {
     if (asksPostgradOnly(field.label) && !hasPostgrad(profile)) return field.options.find((o) => NA_OPTION.test(String(o).trim()));
     const label = clean(String(field.label).split('›').pop());
+    if (/licen[cs]es?\s*(or|and|\/)\s*certifications?|any (professional )?certifications?/i.test(label)) {
+      const want = (profile.certifications || []).length ? /^yes\b/i : /^no\b/i;
+      const hit = field.options.find((o) => want.test(String(o).trim()));
+      if (hit) return hit;
+    }
     if (HEAR_LABEL.test(label)) {
       const opts = field.options.map((o) => [o, normT(o)]);
       const hit = SOURCE_LADDER.map((w) => opts.find(([, n]) => n === w) || opts.find(([, n]) => n.startsWith(w))).find(Boolean) || SOURCE_LADDER.map((w) => opts.find(([, n]) => n.includes(w))).find(Boolean);
@@ -251,6 +275,7 @@ function ruleValue(field, profile, job) {
   }
   // Workday asks short facts in multi-line boxes ("notice period (in days)", "expected Annual CTC"): those come from the profile too.
   if (field.type === 'textarea' && /notice|ctc|cost to company|salary|compensation|stipend|how soon|join|in days/i.test(clean(String(field.label).split('›').pop())) && !/describe|explain|why|tell us/i.test(field.label)) field = { ...field, type: 'text' };
+  if (field.type === 'checkbox' && /fluent in this language/i.test(String(field.label))) return true;
   if (!TEXTLIKE.includes(field.type)) return undefined;
   const label = clean(String(field.label).split('›').pop()) || clean(field.name); // "Education #1 › School" -> "School"
   for (const [re, get] of RULES) {

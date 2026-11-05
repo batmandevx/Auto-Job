@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>My Experience – PwC Workday-style test</title>
+  <style>body { font: 15px system-ui; max-width: 640px; margin: 24px auto; } label { display: block; margin-top: 14px; font-weight: 600; } input, select { padding: 8px; width: 100%; box-sizing: border-box; }
+    .prompt { position: relative; } .pop { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ccc; z-index: 3; } [data-automation-id="promptOption"] { padding: 6px; cursor: pointer; } .chip { display: inline-block; background: #eee; padding: 2px 8px; margin: 2px; }</style>
+</head>
+<body>
+  <h2>Education</h2><h3>Education 1</h3>
+  <div id="edu"></div>
+  <h2>Languages</h2>
+  <h3>Languages 1</h3>
+  <label for="lang1">Language*</label><select id="lang1"><option></option><option>English</option><option>Hindi</option></select>
+  <label><input type="checkbox" id="fl1" /> I am fluent in this language.</label>
+  <label for="ov1">Overall*</label><select id="ov1"><option></option><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Fluent</option><option>Native</option></select>
+  <h3>Languages 2</h3>
+  <label for="lang2">Language*</label><select id="lang2"><option></option><option>English</option><option>Hindi</option></select>
+  <label><input type="checkbox" id="fl2" /> I am fluent in this language.</label>
+  <label for="ov2">Overall*</label><select id="ov2"><option></option><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Fluent</option><option>Native</option></select>
+  <h2>Skills</h2><div id="skills"></div>
+  <h2>Websites</h2>
+  <h3>Websites 1</h3><label for="u1">URL*</label><input id="u1" value="https://old.example.com/" />
+  <h3>Websites 2</h3><label for="u2">URL*</label><input id="u2" value="https://old.example.com" />
+  <script>
+    const $ = (s) => document.querySelector(s);
+    // Workday prompts: search on Enter; a multi-select one keeps adding chips.
+    const prompt = (host, id, label, search, multi) => {
+      const w = document.createElement('div');
+      w.innerHTML = `<label id="${id}-l">${label}</label><div class="prompt" data-automation-id="multiselectInputContainer" id="${id}"><div class="chips"></div><input type="text" data-automation-id="searchBox" placeholder="Search" role="combobox" aria-labelledby="${id}-l" /></div>`;
+      host.appendChild(w);
+      const box = w.querySelector('.prompt'), input = box.querySelector('input'); let pop = null;
+      const show = (items) => { pop?.remove(); pop = document.createElement('div'); pop.className = 'pop'; pop.setAttribute('role', 'listbox'); pop.innerHTML = items.map((t) => `<div data-automation-id="promptOption" role="option">${t}</div>`).join(''); box.appendChild(pop);
+        pop.onclick = (e) => { const t = e.target.textContent; const chip = `<div class="chip" data-automation-id="selectedItem">${t}</div>`; box.querySelector('.chips').innerHTML = multi ? box.querySelector('.chips').innerHTML + chip : chip; pop.remove(); pop = null; input.value = ''; }; };
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') setTimeout(() => show(search(input.value)), 200); });
+      return box;
+    };
+    const SCHOOLS = ['Vellore Christian Medical College', 'School Not Listed'];
+    prompt($('#edu'), 'school', 'School or University*', (q) => { const r = SCHOOLS.filter((s) => s.toLowerCase().includes(q.toLowerCase())); return r.length ? r : ['No Items.']; });
+    const SKILLS = ['Python (Programming Language)', 'SQL', 'Machine Learning', 'Amazon Web Services (AWS)', 'Go (Programming Language)', 'Java', 'JavaScript', 'TypeScript', 'React.js', 'Docker'];
+    prompt($('#skills'), 'sk', 'Type to Add Skills', (q) => { const r = SKILLS.filter((s) => s.toLowerCase().includes(q.toLowerCase())); return r.length ? r : ['No Items.']; }, true);
+    window.report = () => ({
+      school: $('#school [data-automation-id="selectedItem"]')?.textContent || '',
+      skills: [...document.querySelectorAll('#sk [data-automation-id="selectedItem"]')].map((c) => c.textContent),
+      langs: [[lang1.value, fl1.checked, ov1.value], [lang2.value, fl2.checked, ov2.value]],
+      urls: [u1.value, u2.value],
+    });
+  </script>
+</body>
+</html>

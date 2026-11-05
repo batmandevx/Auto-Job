@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Personal information – Harman-style test</title>
+  <style>body { font: 15px system-ui; max-width: 640px; margin: 24px auto; padding: 0 16px; } label { display: block; margin-top: 12px; font-weight: 600; } input, select, textarea { padding: 8px; width: 100%; box-sizing: border-box; } h3 { margin-top: 28px; }</style>
+</head>
+<body>
+  <h2>General Information</h2>
+  <label for="fn">First Name *</label><input id="fn" value="" />
+  <label for="em">Email *</label><input id="em" type="email" value="someone.else@example.com" />
+  <label for="street">Street *</label><input id="street" value="12 Wrong Street" />
+  <label for="state">State/Province *</label><select id="state"><option></option><option>Maharashtra</option><option selected>Tamil Nadu</option><option>Uttar Pradesh</option></select>
+  <label for="city">City *</label><input id="city" value="Chennai" />
+  <label for="pin">Postal Code *</label><input id="pin" value="" />
+  <label for="cc">Country Phone Code *</label><select id="cc"><option selected>India (91)</option><option>United States (1)</option></select>
+  <label for="ph">Mobile Phone Number With Area Code *</label><input id="ph" />
+  <label for="pw">Password *</label><input id="pw" type="password" />
+  <label for="pw2">Password Confirmation *</label><input id="pw2" type="password" />
+  <h2>Work Experience</h2>
+  <div id="work"></div>
+  <h2>Additional Document(s) (optional)</h2>
+  <p>Want to include any supporting files? You can upload documents like certifications, work samples, or cover letters.</p>
+  <input type="file" id="doc1" aria-label="Additional Document(s) (optional)" />
+  <input type="file" id="doc2" aria-label="Additional Document(s) (optional)" />
+  <script>
+    // The site's own resume import put the second-to-last roles in a different order than the profile.
+    const ENTRIES = [['', 'Finlytics Pvt Ltd'], ['', 'CodeCraft Labs'], ['', 'DataNest']];
+    document.getElementById('work').innerHTML = ENTRIES.map(([t, c], i) => `<h3>Work Experience ${i + 1}</h3>
+      <label for="t${i}">Current Position Title *</label><input id="t${i}" value="${t}" />
+      <label for="c${i}">Current Employer *</label><input id="c${i}" value="${c}" />
+      <label for="l${i}">Location *</label><input id="l${i}" />`).join('');
+    window.report = () => ({
+      street: street.value, state: state.value, city: city.value, pin: pin.value, phone: ph.value, pw: pw.value.length, email: em.value,
+      work: ENTRIES.map((_, i) => `${document.getElementById('t' + i).value} @ ${document.getElementById('c' + i).value} (${document.getElementById('l' + i).value})`),
+      docs: [doc1.files.length, doc2.files.length],
+    });
+  </script>
+</body>
+</html>

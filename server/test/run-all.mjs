@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process';
 const BASE = process.env.AUTOJOB_URL || 'http://localhost:8787', PORT = 9337;
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'juspay', 'jobpage', 'otp', 'oracle'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc'];
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/aj-suite-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 50 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
@@ -32,7 +32,7 @@ for (const p of PAGES) {
   console.log(`\n=== ${p}: ${done ? (h.error ? 'ERROR ' + h.error : 'done') : 'TIMEOUT'} · ${(h.log || []).filter((l) => /^\s+\[/.test(l)).length} fields · ${bad.length} not filled · page errors: ${errors.length}`);
   for (const b of bad.slice(0, 8)) console.log('   ✗', b.trim().slice(0, 160));
   for (const e of errors.slice(0, 3)) console.log('   ! JS', e.slice(0, 160));
-  if (report && report !== 'null') console.log('   report:', String(report).slice(0, 260));
+  if (report && report !== 'null') console.log('   report:', String(report).slice(0, 900));
 }
 ws.close(); chrome.kill();
 process.exitCode = failures ? 1 : 0;

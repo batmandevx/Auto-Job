@@ -539,7 +539,9 @@ What makes it work on real portals and not only on simple forms:
 | **Sites that rewrite the form after the resume upload** (PyjamaHR) | Uploads files first, then fills, then re-checks every field at the end and refills anything that was wiped. |
 | **Repeating sections** | Adds Work Experience / Education / Language entries up to what your profile has. It fills editor boxes and presses their own *Add* / *Save*, and opens imported cards flagged "Fields to fix". |
 | **Link rows** ("Work Link [+]", "Link 1 / 2 / 3") | Presses "+" for more boxes and fills both portfolios, LinkedIn and GitHub, always with full `https://` URLs. |
-| **Phone with a separate country-code box** | Enters just the 10 digits. Phone extensions stay empty. |
+| **Phone with a separate country-code box** | Enters just the 10 digits (also for "Mobile Phone Number With Area Code"). Phone extensions stay empty. |
+| **Account-style portals** (Harman, SuccessFactors-like) | A full postal address always comes from your profile as one unit, so the street, city, state and PIN can't disagree. Work Experience entries are matched to your roles **by the company already in them**, even if the site's own import listed them in a different order. Password boxes are pointed out for you to create (Chrome can suggest one). Each document is attached once per page. |
+| **Workday skills and school pickers** | "Type to Add Skills" gets your skills one by one (the job's ones first), searched and picked from the site's list. Schools not in the list get the page's own fallback ("School Not Listed", "Other"). |
 | **Validation errors** | Reads each field's error and the page's error banner. Common fixes (digits only, date format, missing `https://`, length) are instant. Anything else goes back to the AI with the site's message and the rejected value. |
 | **Hidden padding** (zero-width spaces in labels) | Strips it so the question is read correctly. |
 | **Job page vs form** | Ignores the site's search box, menus and "Save job" toggles, presses *Apply now*, and never presses a form's own "Apply" submit button. |
@@ -704,6 +706,8 @@ With the server running, open any of these and use the panel on it:
 | `/test/workday.html` · `/test/wdexp.html` · `/test/wdstate.html` | Workday prompts, split dates, values Workday ignores unless typed |
 | `/test/juspay.html` | Phone with a separate +91 box, CAPTCHA hand-off |
 | `/test/heal.html` | Self-healing: one box heals at real typing, one always ends in "Needs you" |
+| `/test/harman.html` | Account-style portal: full address, phone with area code, password hand-off, entries in a different order |
+| `/test/pwc.html` | Workday: "School Not Listed", multi-select skills, language levels, Website URL boxes |
 | `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |
 | `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
 | `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |

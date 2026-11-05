@@ -1570,17 +1570,7 @@ $('#traceOut').addEventListener('click', async (e) => {
     b.disabled = false;
   }
 });
-on('#traceGmail', () => traceGmail());
-on('#reportForm', async () => {
-  const tab = await activeTab();
-  const shot = (await callFrame(tab.id, 0, 'snapshotForm')) || {};
-  if (!shot.html) throw new Error('Could not read this page');
-  const failures = (await collectFieldErrors(tab).catch(() => [])).map((e) => ({ label: e.label, error: e.error }));
-  const r = await api('/api/report-form', { method: 'POST', body: { ...shot, failures } });
-  toast(`Saved ${r.file}: share it (or ask Claude to fix it) and it becomes a regression test`);
-  state.log.push(`<div class="page">🐞 Reported</div><div class="item"><div class="q">Saved a scrubbed copy of this form</div><div class="v">${esc(r.file)}<span class="src">no values, emails or phone numbers are in it</span></div></div>`);
-  $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
-});
+
 
 async function patchApp(id, body) {
   const a = await api(`/api/applications/${id}`, { method: 'PATCH', body });
@@ -1805,6 +1795,17 @@ async function checkServer() {
 document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 const on = (id, fn) => $(id).addEventListener('click', (e) => busy(e.currentTarget, fn)().catch(() => {}));
 on('#runAll', runAll);
+on('#traceGmail', () => traceGmail());
+on('#reportForm', async () => {
+  const tab = await activeTab();
+  const shot = (await callFrame(tab.id, 0, 'snapshotForm')) || {};
+  if (!shot.html) throw new Error('Could not read this page');
+  const failures = (await collectFieldErrors(tab).catch(() => [])).map((e) => ({ label: e.label, error: e.error }));
+  const r = await api('/api/report-form', { method: 'POST', body: { ...shot, failures } });
+  toast(`Saved ${r.file}: share it (or ask Claude to fix it) and it becomes a regression test`);
+  state.log.push(`<div class="page">🐞 Reported</div><div class="item"><div class="q">Saved a scrubbed copy of this form</div><div class="v">${esc(r.file)}<span class="src">no values, emails or phone numbers are in it</span></div></div>`);
+  $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
+});
 on('#readJob', readJob);
 on('#research', () => research());
 on('#refreshResearch', () => research({ refresh: true }));

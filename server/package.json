@@ -4,7 +4,7 @@
   "description": "Local server for Auto Job: tailors ATS-friendly resumes and cover letters, answers application forms from your profile, reads email OTPs. Runs on your own laptop.",
   "main": "index.js",
   "scripts": {
-    "test": "node test/run-all.mjs",
+    "test": "node test/panel-smoke.mjs && node test/run-all.mjs",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },

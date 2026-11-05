@@ -123,6 +123,7 @@ const RULES = [
   [/reason for (the |your )?(career )?(break|gap)/i, () => null],
   // "Do you have any professional licenses or certifications?": Yes / No from your profile, or the list for a text box.
   [/(professional\s*)?licen[cs]es?\s*(or|and|\/)\s*certifications?|any (professional )?certifications?|certifications? (do you have|held)/i, (p, f) => (CHOICE.includes(f.type) ? ((p.certifications || []).length ? 'Yes' : 'No') : (p.certifications || []).join('; ') || 'None')],
+  [/available (for|to attend) (an? )?(personal|in[\s-]?person|face[\s-]?to[\s-]?face|f2f|onsite|on[\s-]?site|walk[\s-]?in)?\s*interview|attend (an? )?(personal|in[\s-]?person|face[\s-]?to[\s-]?face|f2f) interview/i, () => 'Yes'],
   [/willing to (work|commute).{0,30}(location|office|site|city)|work from the location/i, () => 'Yes'],
   [/first\s*name|given\s*name|fname|forename/i, first],
   [/middle\s*name/i, (p) => p.personal?.middleName || null], // usually none: left empty on purpose, not asked of the AI

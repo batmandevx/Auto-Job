@@ -510,3 +510,6 @@ html[data-mode="popup"] .brand-sub { display: none; }
 .dock-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dock-note[hidden] { display: none; }
 .dock-note small { flex-basis: 100%; opacity: .7; }
+
+/* Hackathon career perks (PPI / PPO / internship / hiring) */
+.hb.perk { background: rgba(34,197,94,.15); color: #16a34a; border-color: rgba(34,197,94,.35); font-weight: 600; }

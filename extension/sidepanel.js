@@ -679,6 +679,9 @@ async function debuggerOff(tabId) {
 const key = (tabId, type, k, code, vk) => chrome.debugger.sendCommand({ tabId }, 'Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
 async function realType(tabId, frameId, id, value) {
   if (!(await debuggerOn(tabId))) return 'real typing unavailable (another debugger is attached?)';
+  // a split date box (MM or YYYY) gets only its own part, never the whole date
+  const whole = value;
+  value = (await callFrame(tabId, frameId, 'boxValue', id, value).catch(() => null)) ?? value;
   const ready = await callFrame(tabId, frameId, 'prepareType', id);
   if (!ready?.ok) return "couldn't focus the field";
   try {
@@ -690,7 +693,7 @@ async function realType(tabId, frameId, id, value) {
     await key(tabId, 'keyDown', 'Tab', 'Tab', 9);
     await key(tabId, 'keyUp', 'Tab', 'Tab', 9);
     await sleep(250);
-    if (await callFrame(tabId, frameId, 'checkValue', id, value)) return 'filled';
+    if (await callFrame(tabId, frameId, 'checkValue', id, whole)) return 'filled';
     // Some widgets only react to individual key presses (masks, digit-only boxes): type it one key at a time.
     if (!(await callFrame(tabId, frameId, 'prepareType', id))?.ok) return "couldn't focus the field";
     await key(tabId, 'keyDown', 'Backspace', 'Backspace', 8);
@@ -705,7 +708,7 @@ async function realType(tabId, frameId, id, value) {
   } catch (e) {
     return `real typing failed: ${e.message}`;
   }
-  if (await callFrame(tabId, frameId, 'checkValue', id, value)) return 'filled';
+  if (await callFrame(tabId, frameId, 'checkValue', id, whole)) return 'filled';
   const shows = await callFrame(tabId, frameId, 'readFieldValue', id);
   return `didn't stick (shows "${String(shows ?? '').slice(0, 40)}")`;
 }
@@ -1528,6 +1531,7 @@ function renderHacks() {
       !state.hackOff.has(h.platform) &&
       (state.hackMode === 'all' || h.mode === state.hackMode) &&
       (!$('#hackSaved').checked || state.savedHacks.has(h.id)) &&
+      (!$('#hackPPO').checked || (h.perks || []).length > 0) &&
       (!india || h.mode === 'online' || /india|delhi|mumbai|bengaluru|bangalore|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|lucknow|jaipur|ahmedabad/i.test(`${h.location} ${h.title}`) || ['unstop', 'devfolio', 'hack2skill', 'hackindia'].includes(h.platform)) &&
       (!words.length || words.every((w) => `${h.title} ${h.organizer} ${h.location} ${(h.tags || []).join(' ')} ${h.mode}`.toLowerCase().includes(w))),
   );
@@ -1535,6 +1539,9 @@ function renderHacks() {
   const far = 8.64e15;
   if (sort === 'deadline') list.sort((a, b) => (a.deadline ? new Date(a.deadline) : far) - (b.deadline ? new Date(b.deadline) : far));
   if (sort === 'prize') list.sort((a, b) => (b.prizeUSD || 0) - (a.prizeUSD || 0));
+  // With the PPI / PPO filter on, offers first, then interviews, then internships and hiring tracks.
+  const rank = (h) => ((h.perks || []).includes('PPO') ? 3 : 0) + ((h.perks || []).includes('PPI') ? 2 : 0) + ((h.perks || []).length ? 1 : 0);
+  if ($('#hackPPO').checked) list.sort((a, b) => rank(b) - rank(a));
   if (sort === 'popular') list.sort((a, b) => (b.participants || 0) - (a.participants || 0));
   $('#hackSummary').textContent = `${list.length} open hackathons${state.hacks.length !== list.length ? ` (of ${state.hacks.length})` : ''} · updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   $('#hackList').innerHTML = list.length
@@ -1551,7 +1558,7 @@ function renderHacks() {
             <div class="body">
               <div class="t"><a href="${esc(safeUrl(h.url))}" target="_blank">${esc(h.title)}</a></div>
               <div class="m">${[h.organizer && h.organizer !== p.name ? esc(h.organizer) : '', h.mode ? esc(h.mode) : '', h.location ? `📍 ${esc(h.location)}` : '', h.participants ? `👥 ${Number(h.participants).toLocaleString()}` : '', h.stage ? esc(h.stage) : ''].filter(Boolean).join(' · ')}</div>
-              <div class="badges"><span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
+              <div class="badges"><span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${(h.perks || []).map((k) => `<span class="hb perk" title="${esc(h.rewards || k)}">🎯 ${esc(k)}</span>`).join('')}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
             </div>
             <button class="save ${state.savedHacks.has(h.id) ? 'on' : ''}" data-save="${esc(h.id)}" title="Save">${state.savedHacks.has(h.id) ? '★' : '☆'}</button>
           </div>`;
@@ -1720,6 +1727,7 @@ on('#refreshHacks', () => loadHacks(true));
 $('#hackSearch').addEventListener('input', renderHacks);
 $('#hackSort').addEventListener('change', renderHacks);
 $('#hackSaved').addEventListener('change', renderHacks);
+$('#hackPPO').addEventListener('change', renderHacks);
 $('#hackIndia').addEventListener('change', renderHacks);
 $('#hackMode').addEventListener('click', (e) => {
   const m = e.target.dataset.m;

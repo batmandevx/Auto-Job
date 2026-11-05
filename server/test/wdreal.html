@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Workday behaviours test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 700px; margin: 24px auto; padding: 0 16px; }
+    label, .lbl { display: block; margin-top: 14px; } input, textarea, select { padding: 8px; box-sizing: border-box; }
+    .date input { width: 70px; } .prompt { position: relative; } .pop { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ccc; z-index: 3; }
+    [data-automation-id="promptOption"] { padding: 6px; } [aria-selected="true"] { background: #000; color: #fff; } .chip { background: #eee; padding: 2px 8px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <!-- Behaviours of real Workday that the simpler mocks don't have:
+       1. Date boxes: once the month is complete the cursor jumps to the year box by itself, and a
+          two-digit year is read as 20xx when you leave it ("05" -> 2005).
+       2. "Region" (not "State") next to the address.
+       3. A Phone Extension box that must stay empty.
+       4. Multi-select prompts (skills) where clicking an option's text does nothing: the highlighted
+          option is picked with Enter (or a click on its checkbox). -->
+  <h2>My Information</h2>
+  <label for="addr1">Address Line 1*</label><input id="addr1" />
+  <label for="city">City*</label><input id="city" />
+  <label for="region">Region</label>
+  <select id="region"><option value="">Select One</option><option>Tamil Nādu</option><option>Uttar Pradesh</option><option>Karnataka</option></select>
+  <label for="phone">Phone Number*</label><input id="phone" type="tel" />
+  <label for="ext">Phone Extension</label><input id="ext" type="text" />
+
+  <h2>Work Experience</h2>
+  <div id="work"></div>
+
+  <h2>Languages</h2>
+  <label for="lang1">Language*</label><select id="lang1"><option value="">Select One</option><option>English</option><option>Hindi</option></select>
+  <label><input id="fluent1" type="checkbox" /> I am fluent in this language.</label>
+
+  <h2>Skills</h2>
+  <div id="skills"></div>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    let html = '';
+    for (const n of [1, 2]) {
+      html += `<h3>Work Experience ${n}</h3>
+        <div><label for="t${n}">Job Title*</label><input id="t${n}" type="text" /></div>
+        <div><label for="c${n}">Company*</label><input id="c${n}" type="text" /></div>
+        <div role="group" aria-labelledby="from${n}-l"><div id="from${n}-l" class="lbl">From*</div><div class="date">
+          <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" id="fm${n}" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" id="fy${n}" /></div></div>
+        <div role="group" aria-labelledby="to${n}-l"><div id="to${n}-l" class="lbl">To*</div><div class="date">
+          <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" id="tm${n}" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" id="ty${n}" /></div></div>`;
+    }
+    $('#work').innerHTML = html;
+    for (const m of document.querySelectorAll('[data-automation-id="dateSectionMonth-input"]')) {
+      const y = m.parentElement.querySelector('[data-automation-id="dateSectionYear-input"]');
+      m.addEventListener('input', () => {
+        m.value = m.value.replace(/\D/g, '').slice(-2);
+        // complete month ("05", "11", or a single 2-9): jump to the year box like Workday does
+        if (m.value.length === 2 || /^[2-9]$/.test(m.value)) y.focus();
+      });
+      y.addEventListener('input', () => (y.value = y.value.replace(/\D/g, '').slice(-4)));
+      y.addEventListener('focusout', () => { if (/^\d{2}$/.test(y.value)) y.value = `20${y.value}`; });
+    }
+
+    // Skills prompt: Enter searches; Enter again (or a click on the checkbox) picks the highlighted result.
+    const SKILLS = ['Python', 'JavaScript', 'TypeScript', 'PyTorch', 'TensorFlow', 'LangChain', 'Data Pipelines'];
+    $('#skills').innerHTML = `<label id="sk-l">Type to Add Skills</label><div class="prompt" data-automation-id="multiselectInputContainer" id="sk"><div class="chips"></div>
+      <input type="text" data-automation-id="searchBox" placeholder="Search" role="combobox" aria-labelledby="sk-l" /></div>`;
+    const box = $('#sk'), input = box.querySelector('input'); let pop = null, results = [], active = 0, lastQ = '';
+    const choose = (t) => { if (![...box.querySelectorAll('.chip')].some((c) => c.textContent === t)) box.querySelector('.chips').insertAdjacentHTML('beforeend', `<div class="chip" data-automation-id="selectedItem">${t}</div>`); };
+    const show = () => {
+      pop?.remove(); pop = document.createElement('div'); pop.className = 'pop'; pop.setAttribute('role', 'listbox');
+      pop.innerHTML = results.map((t, i) => `<div data-automation-id="promptOption" role="option" aria-selected="${i === active}"><span class="cb" role="checkbox" aria-checked="false"></span> ${t}</div>`).join('');
+      box.appendChild(pop);
+      pop.querySelectorAll('.cb').forEach((cb, i) => cb.addEventListener('click', () => choose(results[i])));
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { active = Math.min(active + 1, results.length - 1); show(); }
+      if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); show(); }
+      if (e.key !== 'Enter') return;
+      if (pop && input.value === lastQ && results.length) return choose(results[active]);
+      lastQ = input.value; active = 0;
+      setTimeout(() => { results = SKILLS.filter((s) => s.toLowerCase().includes(input.value.toLowerCase())); if (!results.length) results = ['No Items.']; show(); }, 200);
+    });
+
+    window.report = () => ({
+      region: $('#region').value, ext: $('#ext').value, fluent: $('#fluent1').checked,
+      work: [1, 2].map((n) => `${$('#fm' + n).value}/${$('#fy' + n).value} - ${$('#tm' + n).value}/${$('#ty' + n).value}`),
+      skills: [...box.querySelectorAll('.chip')].map((c) => c.textContent),
+    });
+  </script>
+</body>
+</html>

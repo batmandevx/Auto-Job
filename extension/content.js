@@ -1,7 +1,7 @@
 // Injected into every frame of the job page by the side panel.
 // Exposes window.__jobfill: scan / fill / upload / next / submit helpers. Never submits on its own.
 (() => {
-  if (window.__jobfill?.version === 7) return;
+  if (window.__jobfill?.version === 8) return;
 
   const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'password']);
   const clean = (s) => (s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim(); // zero-width padding (PyjamaHR) is not text
@@ -215,12 +215,15 @@
     el.click();
     setNativeValue(el, '');
     for (const ch of String(text)) {
+      // Split date boxes move the cursor on their own (MM -> YYYY); insertText types into whatever has
+      // focus, so put it back first or a month digit ends up in the year ("05" -> 2005).
+      if (document.activeElement !== el) el.focus();
       el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
       el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
       caretToEnd(el);
       let typed = false;
       try {
-        typed = document.execCommand('insertText', false, ch) && el.value.endsWith(ch);
+        typed = document.activeElement === el && document.execCommand('insertText', false, ch) && el.value.endsWith(ch);
       } catch {
         typed = false;
       }
@@ -762,8 +765,12 @@
   };
   const clickLikeUser = (node) => {
     node.scrollIntoView({ block: 'nearest' });
+    const r = node.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, view: window, clientX: r.left + Math.min(12, r.width / 2), clientY: r.top + r.height / 2, button: 0 };
     for (const type of ['pointerover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      // Widgets built on pointer events (Workday's newer lists) check for a real PointerEvent.
+      const Ev = type.startsWith('pointer') && typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+      node.dispatchEvent(new Ev(type, { ...at, buttons: /down/.test(type) ? 1 : 0, ...(Ev === PointerEvent ? { pointerType: 'mouse', isPrimary: true } : {}) }));
     }
   };
   async function typeInto(input, text) {
@@ -813,13 +820,43 @@
         const texts = optionTexts(sub);
         if (!sub.length || texts.join('|') === before) break;
         let j = bestMatch(texts, v);
+        // Second level of a source list ("Job Board" › …): only a close match, else the ladder ("Other"),
+        // never the nearest-looking board ("LinkedIn" is not "Jobstreet").
+        if (j >= 0 && sourceQ && scoreOption(texts[j], v) < 68) j = -1;
         if (j < 0 && sourceQ) j = ladderIndex(texts, SOURCE_LADDER);
         if (j < 0) break;
         before = texts.join('|');
         clickLikeUser(sub[j]);
         await sleep(450);
       }
-      return 'filled';
+      // Check it took: some lists (Workday) ignore scripted clicks and keep "Select One" or the old answer.
+      const wanted = clean(opts[i]?.textContent) || v;
+      const took = () => {
+        const now = clean(readValue(el));
+        return !!now && (sourceQ || sameValue(now, wanted) || sameValue(now, v) || !!el.dataset.jfOther);
+      };
+      if (took()) return 'filled';
+      // Click its checkbox / radio, if it has one, then try the keyboard: open, arrow down to it, Enter.
+      const inner = opts[i]?.isConnected && opts[i].querySelector('input, [role="checkbox"], [role="radio"], [data-automation-id="checkboxPanel"]');
+      if (inner) {
+        clickLikeUser(inner);
+        await sleep(400);
+        if (took()) return 'filled';
+      }
+      el.focus();
+      open(el);
+      await sleep(400);
+      const list = optionNodes(el).filter(shown);
+      const k = bestMatch(optionTexts(list), wanted);
+      if (k >= 0) {
+        for (let n = 0; n <= k; n++) press(document.activeElement || el, 'ArrowDown');
+        press(document.activeElement || el, 'Enter');
+        await sleep(450);
+        if (took()) return 'filled';
+      }
+      close(el);
+      const shows = clean(readValue(el));
+      return `didn't stick: picked "${wanted.slice(0, 40)}" but it shows "${(shows || 'nothing').slice(0, 40)}"`;
     };
     // Source questions (Workday "How Did You Hear About Us?"): open the list and walk its categories
     // (Job Boards › LinkedIn); typing only searches the top level there.
@@ -907,6 +944,12 @@
         const i = bestMatch(opts, String(w));
         if (i < 0) continue;
         if (!isChecked(members[i])) members[i].click();
+        if (!isChecked(members[i])) {
+          clickLikeUser(members[i].labels?.[0] || members[i].closest('label') || members[i]);
+          await sleep(200);
+        }
+        if (!isChecked(members[i]) && (members[i].type === 'radio' || members[i].getAttribute('role') === 'radio'))
+          return `didn't stick: "${opts[i]}" isn't selected`;
         hit = true;
       }
       if (hit) mark(members[0], review);
@@ -915,6 +958,11 @@
 
     const el = findById(id);
     if (!el) return 'field disappeared';
+    // Phone extensions are for office desk lines: keep them empty, whatever the answer says ("+91" there breaks the number).
+    if (el.tagName === 'INPUT' && /phone\s*ext|extension/i.test(`${labelFor(el)} ${el.getAttribute('data-automation-id') || ''} ${el.name || ''} ${el.id || ''}`)) {
+      if (el.value) setNativeValue(el, '');
+      return 'filled';
+    }
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
     const role = el.getAttribute('role');
     const kind = comboKind(el);
@@ -922,15 +970,34 @@
 
     if (el.type === 'checkbox' || role === 'checkbox' || role === 'switch') {
       if (isChecked(el) !== truthy(value)) el.click();
+      if (isChecked(el) !== truthy(value)) {
+        const lab = el.labels?.[0] || el.closest('label') || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`));
+        clickLikeUser(lab || el);
+        await sleep(200);
+      }
+      if (isChecked(el) !== truthy(value)) status = `didn't stick (the box is still ${isChecked(el) ? 'ticked' : 'unticked'})`;
     } else if (kind && Array.isArray(value) && (el.getAttribute('data-automation-id') === 'searchBox' || el.closest('[data-automation-id="multiselectInputContainer"]'))) {
       // A multi-select prompt (Workday "Type to Add Skills"): search and pick each item; ones not in their list are skipped.
       let picked = 0;
       for (const item of value.slice(0, 15)) {
         const r = await searchWithEnter(el, String(item));
         if (r && !r.other) {
+          const n = chipsOf(el).length;
           clickLikeUser(r.opts[r.i]);
-          picked++;
           await sleep(350);
+          // Workday may ignore a scripted click on the text: try its checkbox, then Enter on the highlighted result.
+          const inner = r.opts[r.i].isConnected && r.opts[r.i].querySelector('input, [role="checkbox"], [data-automation-id="checkboxPanel"]');
+          if (chipsOf(el).length <= n && inner) {
+            clickLikeUser(inner);
+            await sleep(350);
+          }
+          if (chipsOf(el).length <= n) {
+            el.focus();
+            for (let k = 0; k < r.i; k++) press(el, 'ArrowDown');
+            press(el, 'Enter');
+            await sleep(450);
+          }
+          if (chipsOf(el).length > n) picked++;
         }
       }
       close(el);
@@ -969,13 +1036,25 @@
       if (part) {
         const want = datePart(value, part);
         if (!want) return `no ${part} in "${value}"`;
+        if (Number(readValue(el)) === Number(want)) return 'filled'; // already right: retyping can only break it
+        // The other boxes of this date (MM / YYYY): typing here must not change them.
+        const group = el.closest('[role="group"], [data-automation-id="dateInputWrapper"]') || el.parentElement;
+        const others = [...(group?.querySelectorAll('input') || [])].filter((i) => i !== el && dateSection(i));
+        const before = others.map((o) => o.value);
         await typeChars(el, want);
         await sleep(150);
         if (Number(readValue(el)) !== Number(want)) {
           setNativeValue(el, want);
           el.dispatchEvent(new Event('blur', { bubbles: true }));
         }
+        for (const [k, o] of others.entries()) {
+          if (before[k] && o.value !== before[k]) {
+            await typeChars(o, before[k]);
+            leave(o);
+          }
+        }
         mark(el, review);
+        if (Number(readValue(el)) !== Number(want)) return `didn't stick (the ${part} box shows "${readValue(el)}")`;
         return 'filled';
       }
       // Date text fields: use the field's own format; date pickers often make the input read-only.
@@ -1741,6 +1820,12 @@
     return i < 0 ? null : centerOf(opts[i]);
   }
   const checkValue = (id, value) => holds(id, value);
+  // What real typing should type into a box: just its part for split date boxes ("05" of "May 2026").
+  const boxValue = (id, value) => {
+    const el = findById(id);
+    const part = el && dateSection(el);
+    return part ? datePart(value, part) || value : value;
+  };
   // Outbound links on the job page (a "company website" link is often among them), for company research.
   const pageLinks = () => [...new Set([...document.querySelectorAll('a[href^="http"]')].map((a) => a.href).filter((h) => { try { return new URL(h).hostname !== location.hostname; } catch { return false; } }))].slice(0, 25);
   // "Show me": bring a field you need to fix into view, outline it red and put the cursor in it.
@@ -1768,7 +1853,7 @@
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
   window.__jobfill = {
-    version: 7,
+    version: 8,
     scan,
     fill,
     uploadFile,
@@ -1799,6 +1884,7 @@
     clickPoint,
     optionPoint,
     checkValue,
+    boxValue,
     pageLinks,
     jumpTo,
     fieldError,

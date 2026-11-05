@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process';
 const BASE = process.env.AUTOJOB_URL || 'http://localhost:8787', PORT = 9337;
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc', 'wdreal'];
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/aj-suite-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 50 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }

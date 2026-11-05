@@ -82,7 +82,14 @@ const SOURCES = {
     const pages = await Promise.all([1, 2, 3].map((p) => get(`https://unstop.com/api/public/opportunity/search-result?opportunity=hackathons&page=${p}&per_page=30&oppstatus=open`).catch(() => null)));
     return pages.flatMap((p) => p?.data?.data || []).map((h) => {
       const cash = (h.prizes || []).reduce((s, p) => s + (Number(p.cash) || 0), 0);
+      const prizeText = (h.prizes || []).map((p) => p.others || '').join(' | ');
       return {
+        // Unstop flags these per prize; the reward text and description say the rest ("pre placement interview").
+        perks: careerPerks(`${prizeText} ${String(h.details || '').replace(/<[^>]+>/g, ' ')}`, {
+          ppi: (h.prizes || []).some((p) => Number(p.pre_placement_internship) > 0),
+          ppo: (h.prizes || []).some((p) => Number(p.pre_placement_opportunity) > 0),
+        }),
+        rewards: prizeText.replace(/\s+/g, ' ').trim().slice(0, 240),
         title: h.title,
         url: h.seo_url || `https://unstop.com/${h.public_url}`,
         organizer: h.organisation?.name,
@@ -267,6 +274,17 @@ async function fetchPlatform(p) {
 }
 
 // At most 3 platforms at a time; a failing platform falls back to its last good results.
+// Career rewards a hackathon offers: PPI (pre-placement interview), PPO (pre-placement offer), internships, hiring.
+export function careerPerks(text, flags = {}) {
+  const t = String(text || '');
+  const perks = [];
+  if (flags.ppo || /\bppos?\b|pre[\s-]?placement\s*(offer|opportunit)|full[\s-]?time (job )?offers?|job offers?/i.test(t)) perks.push('PPO');
+  if (flags.ppi || /\bppis?\b|pre[\s-]?placement\s*interviews?|(fast[\s-]?track(ed)?|direct) interviews?|interview opportunit/i.test(t)) perks.push('PPI');
+  if (/internships?\s*(opportunit|offer|role|position)|paid internships?|intern(ship)? (offers?|roles?) (for|to) (the )?(winners?|top)|win (an )?internship|pre[\s-]?placement\s*internship/i.test(t)) perks.push('Internship');
+  if (/hiring (challenge|hackathon|drive)|get hired|recruit(ment|ing) (drive|opportunit)|jobs? (opportunit|for (the )?winners)/i.test(t)) perks.push('Hiring');
+  return perks;
+}
+
 export async function listHackathons({ refresh = false } = {}) {
   if (!refresh && Date.now() - cache.at < TTL && cache.items.length) return cache;
   const results = [];
@@ -295,7 +313,7 @@ export async function listHackathons({ refresh = false } = {}) {
       const k = h.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
       return !seen.has(k) && seen.add(k);
     })
-    .map((h) => ({ ...h, id: `${h.platform}:${h.url}` }));
+    .map((h) => ({ ...h, perks: [...new Set([...(h.perks || []), ...careerPerks(`${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''} ${h.prize || ''}`)])], id: `${h.platform}:${h.url}` }));
   cache = { at: now, items, sources: Object.fromEntries(results), byPlatform: cache.byPlatform };
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache));

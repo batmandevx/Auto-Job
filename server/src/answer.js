@@ -40,6 +40,8 @@ const worksHere = (p, job, label = '') => (p.experience || []).some((e) => {
 const FULL_NUMBER = /annual|per annum|yearly|in inr|in rupees|lpa|full\s*(no|number|amount)|example\s*-?\s*\d{4,}|numbers? only|digits/i;
 // The job is outside India (from the question or the job's location): you'd need a visa there.
 const ABROAD = /united states|\busa?\b|america|canada|\buk\b|united kingdom|england|germany|ireland|netherlands|france|singapore|australia|japan|uae|dubai|europe/i;
+// "Lucknow, Uttar Pradesh, India" -> part 0 city, 1 state, 2 country
+const birthPart = (p, i) => String(p.personal?.placeOfBirth || '').split(',').map((x) => x.trim())[i] || undefined;
 const abroad = (f, job) => (/india/i.test(f.label) ? false : ABROAD.test(f.label) || (!!job?.location && !/india|remote/i.test(job.location) && ABROAD.test(job.location)));
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // Year of study from your degree's start ("2023", classes from August): 3 years done in Nov 2026 -> senior year.
@@ -79,6 +81,15 @@ const RULES = [
   [/veteran\s*status|protected veteran/i, (p) => p.answers.veteranStatus],
   [/disability\s*status|have a disability/i, (p) => p.answers.disabilityStatus],
   [/academic standing|current (academic )?(year|status) (of|in) (study|college|university)|year of study|which year are you in|current year of (your )?(degree|study)/i, (p) => academicStanding(p)],
+  // Notice questions mention "your current employer" too ("How much notice must you provide your current
+  // employer…"), so they're answered before the employer-name rule below can take them.
+  [/\bnotice\b.{0,60}(employer|leaving|resign|period|give|provide)|how much notice/i, (p, f) => (numericField(f) || /\bdays?\b/i.test(f.label) ? p.answers.noticeDays || '1' : p.answers.noticePeriod)],
+  // Workday says "Region" for the state of your address; "Region of Birth" is the state you were born in.
+  [/(region|state|province)\s*(\/\s*\w+\s*)?of\s*birth/i, (p) => birthPart(p, 1)],
+  [/country(\s*\/\s*territory)?\s*of\s*birth|birth\s*country/i, (p) => birthPart(p, 2) || p.personal.nationality],
+  [/^region\b|^state\s*\/\s*region|^county\b/i, (p) => p.personal.state],
+  [/(aware|understand|acknowledge|agree).{0,80}(expected|required) to work (in|from) india|expected to work in india/i, () => 'Yes'],
+  [/willing (and able )?to travel|able to travel|travel (as|per) (the job|required|needed)|open to travel/i, () => 'Yes'],
   [/current\s*(company|employer|organi[sz]ation)(\s*name)?/i, (p, f) => (/^\s*yes/i.test(p.answers.currentlyEmployed || '') || f.required ? String(p.experience?.[0]?.company || '').split(',')[0] || undefined : null)],
   [/^(today'?s\s*)?date$|signature date|date signed/i, (p, f) => toHintFormat(localToday(), `${f.placeholder || ''} ${f.label}`, 'MM/DD/YYYY')],
   // Screening questions with fixed answers from your profile.
@@ -96,6 +107,12 @@ const RULES = [
   // (the answers say you hold no visa for them).
   [/legally (authori[sz]ed|eligible|permitted|allowed) to work|authori[sz]ed to work|right to work|eligible to work/i, (p, f, job) => (abroad(f, job) ? 'No' : 'Yes')],
   [/(are you )?currently (employed|working)(\?|$)|current employment status/i, (p) => yesNo(p.answers.currentlyEmployed)],
+  // "Do you hold the certifications … as outlined in the job description?": that's about the job's own
+  // requirements (often a clearance), not your course certificates.
+  [/certifications?.{0,40}(clearance|as (outlined|listed|described|mentioned)|in the job description|required for (this|the) (role|job|position))/i, (p, f) => (f.options?.find((o) => /not applicable|n\/?a\b/i.test(o)) || 'No')],
+  // Career breaks: none (studying, then internships), and the "reason" box stays empty.
+  [/(taken|take|had) a (career )?break|career (break|gap)\??$|gap in (your )?(career|employment)/i, () => 'No'],
+  [/reason for (the |your )?(career )?(break|gap)/i, () => null],
   // "Do you have any professional licenses or certifications?": Yes / No from your profile, or the list for a text box.
   [/(professional\s*)?licen[cs]es?\s*(or|and|\/)\s*certifications?|any (professional )?certifications?|certifications? (do you have|held)/i, (p, f) => (CHOICE.includes(f.type) ? ((p.certifications || []).length ? 'Yes' : 'No') : (p.certifications || []).join('; ') || 'None')],
   [/willing to (work|commute).{0,30}(location|office|site|city)|work from the location/i, () => 'Yes'],
@@ -109,7 +126,7 @@ const RULES = [
   [/confirm.*e-?mail|e-?mail.*(again|confirm)/i, (p) => p.email],
   [/e-?mail/i, (p) => p.email],
   [/country\s*(phone\s*)?code|dial(l)?ing\s*code|isd/i, (p) => (p.phone.match(/^\+\d{1,3}/) || ['+91'])[0]],
-  [/phone\s*ext|^ext(ension)?\b|extension/i, () => undefined],
+  [/phone\s*ext|^ext(ension)?\b|extension/i, () => null], // left empty on purpose (desk lines only), never asked of the AI
   [/phone|mobile|contact\s*(no|number)|cell|whatsapp/i, (p, f) => (f.codeBeside ? digits(p.phone).slice(-10) : p.phone)],
   [/linked\s*in/i, (p) => p.links?.linkedin],
   [/git\s*hub/i, (p) => p.links?.github],
@@ -118,7 +135,8 @@ const RULES = [
   [LINK_LABEL, (p, f) => linkList(p)[linkIndex(f)]],
   [/date\s*of\s*birth|\bdob\b|birth\s*date|birthday/i, (p) => p.personal.dateOfBirth],
   [/nationality|citizenship/i, (p) => p.personal.nationality],
-  [/place\s*of\s*birth|birth\s*place|city\s*of\s*birth/i, (p) => p.personal.placeOfBirth],
+  [/city\s*of\s*birth|birth\s*city/i, (p) => birthPart(p, 0)], // just "Lucknow": state and country have their own boxes
+  [/place\s*of\s*birth|birth\s*place/i, (p) => p.personal.placeOfBirth],
   [/fluent in this language/i, () => true],
   // A skills picker ("Type to Add Skills"): your skills, the job's ones first, one item each.
   [/^(type to add |add |your |key |technical )?skills?\b(?!.*(describe|explain|rate|years))/i, (p, f, job) => {
@@ -130,7 +148,7 @@ const RULES = [
   }],
   [{ test: (l) => LANG_NAME.test(l) }, (p, f) => (/language/i.test(f.section || '') || f.entry ? spoken(p)[(f.entry || 1) - 1] : spoken(p)[0])],
   [{ test: (l) => LANG_LEVEL.test(l) }, (p, f) => (/language/i.test(`${f.section || ''} ${f.label}`) ? (nativeLang(spoken(p)[(f.entry || 1) - 1]) ? 'Native' : 'Fluent') : undefined)],
-  [HEAR_LABEL, () => 'LinkedIn'],
+  [HEAR_LABEL, (p) => p.answers?.howDidYouHear || 'LinkedIn'],
   [/^(languages?\s*(known|spoken)?|spoken\s*languages?|languages you (speak|know))$/i, (p) => p.personal.languages],
   [/\bc?gpa\b|grade\s*point|cumulative\s*grade/i, (p) => p.education?.[0]?.gpa],
   [/^(gender|sex|gender identity)\b/i, (p) => p.personal.gender || p.answers.gender],

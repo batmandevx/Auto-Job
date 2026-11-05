@@ -405,6 +405,7 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 ### Hacks tab
 
 - Open hackathons from **Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia**, with prize, mode, location, team size, themes and deadline.
+- **🎯 PPI / PPO:** shows only hackathons whose rewards include a pre-placement interview (PPI), a pre-placement offer (PPO), an internship or a hiring track, with offers listed first. Each card shows its perks as green badges (hover for the reward text). On Unstop these come from the organiser's own PPI / PPO flags; elsewhere from the reward text, title and tags.
 - **Search** (AI, web3, fintech, a city…), filter **Online / In person / Hybrid**, **India / online** only, **Saved only**, and sort by **closing soon**, **biggest prize** or **most popular**.
 - Deadlines turn **red** under 24 hours and **amber** under 4 days. **☆** saves one to your shortlist.
 - Results are cached for 30 minutes and kept on disk. If a platform is down, its last results stay and its chip shows "!".
@@ -710,6 +711,7 @@ With the server running, open any of these and use the panel on it:
 | `/test/heal.html` | Self-healing: one box heals at real typing, one always ends in "Needs you" |
 | `/test/harman.html` | Account-style portal: full address, phone with area code, password hand-off, entries in a different order |
 | `/test/pwc.html` | Workday: "School Not Listed", multi-select skills, language levels, Website URL boxes |
+| `/test/wdreal.html` | Real Workday behaviours: the cursor jumping from month to year, "Region", an extension box that must stay empty, lists that ignore scripted clicks |
 | `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |
 | `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
 | `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |

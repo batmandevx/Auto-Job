@@ -1339,7 +1339,7 @@
   function headingBefore(el) {
     let n = el;
     for (let i = 0; n && i < 8; i++, n = n.parentElement) {
-      for (let p = n.previousElementSibling, k = 0; p && k < 6; p = p.previousElementSibling, k++) {
+      for (let p = n.previousElementSibling, k = 0; p && k < 15; p = p.previousElementSibling, k++) {
         const h = p.matches('h1, h2, h3, h4, h5, [role="heading"]') ? p : p.querySelector?.('h2, h3, h4, h5, [role="heading"]');
         const t = clean(h?.textContent);
         // A field's own label ("Job Title*") is not a section heading, even when the site marks it up as one.
@@ -1356,8 +1356,18 @@
     for (const f of fields) counts.set(base(f), (counts.get(base(f)) || 0) + 1);
     const seen = new Map();
     for (const f of fields) {
-      if (counts.get(base(f)) < 2 || f.type === 'file') continue;
+      if (f.type === 'file') continue;
       const el = findById(f.id) || groups.get(f.id)?.[0];
+      if (counts.get(base(f)) < 2) {
+        const head = el && clean(sectionOf(el) || headingBefore(el));
+        const m = head && head.match(/^(.{3,40}?)\s*#?\s*(\d{1,2})$/);
+        if (m && (SECTION_WORDS.experience.test(m[1]) || SECTION_WORDS.education.test(m[1]))) {
+          f.section = m[1];
+          f.entry = Number(m[2]);
+          f.label = `${m[1]} #${m[2]} › ${f.label}`;
+        }
+        continue;
+      }
       const sec = (el && (sectionOf(el) || headingBefore(el)).replace(/\s*\d+$/, '')) || 'Entry';
       const k = `${sec}|${base(f)}`;
       const n = (seen.get(k) || 0) + 1;
@@ -1373,6 +1383,7 @@
     experience: /work experience|experience|employment|work history|positions?|jobs?/i,
     education: /education|school|degree|qualification|academic/i,
     languages: /languages?/i,
+    websites: /websites?|links?|urls?|social (profiles?|media)/i,
   };
   function addButtonFor(kind) {
     return buttons().find((b) => {
@@ -1434,7 +1445,7 @@
     for (let k = 0; k < want; k++) {
       const list = linkInputs();
       if (!list.length || list.length >= want) break;
-      const b = plusButtonNear(list[list.length - 1]) || buttons().find((x) => /^(\+\s*)?add\s*(another|more|new)?\s*(link|url|website)s?$/i.test(btnText(x)));
+      const b = plusButtonNear(list[list.length - 1]) || buttons().find((x) => /^(\+\s*)?add\s*(another|more|new)?\s*(link|url|website)s?$/i.test(btnText(x))) || addButtonFor('websites'); // Workday: "Add Another" under Websites
       if (!b) break;
       b.click();
       for (let t = 0; t < 15 && linkInputs().length <= list.length; t++) await sleep(150); // the row renders a moment later
@@ -1442,6 +1453,71 @@
       added++;
     }
     return added;
+  }
+
+  // ---------- check before continuing ----------
+  // Read the page back after filling: dates in the wrong order, text the site's resume import left behind
+  // ("Remote" as a role description), required boxes still empty, and how many entries each section has.
+  async function auditPage() {
+    const { fields } = await scan();
+    const issues = [];
+    const tail = (f) => clean(String(f.label).split('›').pop());
+    const val = (f) => clean(readFieldValue(f.id));
+    const hasValue = (f) => {
+      if (val(f)) return true;
+      const el = findById(f.id);
+      return !!el && (chipsOf(el).length > 0 || !!el.closest('[data-automation-id="multiselectInputContainer"]')?.querySelector('[data-automation-id="selectedItem"]'));
+    };
+    const entries = new Map();
+    for (const f of fields) if (f.section && f.entry) {
+      const k = `${f.section}#${f.entry}`;
+      if (!entries.has(k)) entries.set(k, []);
+      entries.get(k).push(f);
+    }
+    const monthIndex = (list, re) => {
+      const parts = list.filter((f) => re.test(tail(f)));
+      if (!parts.length) return null;
+      const m = parts.find((p) => p.datePart === 'month'), y = parts.find((p) => p.datePart === 'year');
+      const s = m || y ? `${m ? val(m) : ''}/${y ? val(y) : ''}` : val(parts[0]);
+      const my = s.match(/(\d{1,2})\D+((?:19|20)\d{2})/);
+      if (my) return Number(my[2]) * 12 + Number(my[1]);
+      const yr = s.match(/(?:19|20)\d{2}/);
+      return yr ? Number(yr[0]) * 12 : null;
+    };
+    for (const list of entries.values()) {
+      const name = clean(String(list[0].label).split('›')[0]);
+      const current = list.find((f) => /currently work|i work here/i.test(tail(f)));
+      const box = current && (findById(current.id) || groups.get(current.id)?.[0]);
+      const isCurrent = !!box && isChecked(box);
+      const from = monthIndex(list, /^from\b|start/i), to = monthIndex(list, /^to\b|end\s*date|^end\b/i);
+      if (!isCurrent && from && to && to < from) issues.push({ label: `${name} › To`, problem: 'ends before it starts' });
+      const company = list.find((f) => /company|employer|organi[sz]ation/i.test(tail(f)) && !/title|position/i.test(tail(f)));
+      const place = list.find((f) => /location|city/i.test(tail(f)));
+      const desc = list.find((f) => /description|responsibilit|duties/i.test(tail(f)));
+      const d = desc ? val(desc) : '';
+      if (d && d.length < 40 && [company, place].some((x) => x && val(x) && d.toLowerCase().includes(val(x).toLowerCase())))
+        issues.push({ label: `${name} › ${tail(desc)}`, problem: `only says "${d}": leftover from the site's resume import` });
+    }
+    for (const f of fields) if (f.required && !['file', 'captcha'].includes(f.type) && !hasValue(f)) issues.push({ label: f.label, problem: 'required and still empty' });
+    const count = (re) => Math.max(0, ...fields.filter((f) => f.entry && re.test(f.section || '')).map((f) => f.entry));
+    return { issues: issues.slice(0, 20), entries: { experience: count(/experience|employment/i), education: count(/education/i) } };
+  }
+
+  // Remove one entry of a repeating section ("Education 2"): its own Delete button, between its heading and the next one.
+  // Only runs when you press "Delete it" in the panel.
+  async function deleteEntry(kind, n) {
+    const words = SECTION_WORDS[kind]?.source || kind;
+    const heads = deepAll('h1, h2, h3, h4, h5, h6, [role="heading"], legend, label, div, span, p')
+      .filter((e) => shown(e) && e.childElementCount === 0 && new RegExp(`^(${words})\\s*#?\\s*\\d+$`, 'i').test(clean(e.textContent)));
+    const head = heads.find((e) => new RegExp(`\\b${n}$`).test(clean(e.textContent)));
+    if (!head) return { ok: false, reason: `no "${kind} ${n}" heading` };
+    const next = heads.find((e) => e !== head && head.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING && Number(clean(e.textContent).match(/\d+$/)[0]) > n);
+    const btn = deepAll('button, [role="button"]').find((b) => shown(b) && /^(delete|remove)\b|\b(delete|remove)\b/i.test(`${btnText(b)} ${b.getAttribute('aria-label') || ''}`) &&
+      head.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING && (!next || b.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING));
+    if (!btn) return { ok: false, reason: 'no Delete button in that entry' };
+    click(btn);
+    await waitStable(400, 2500);
+    return { ok: true };
   }
 
   // Collapsed entry cards the site flags ("Fields to fix: 1", "Incomplete"): open the editor so its fields can be filled,
@@ -2056,6 +2132,8 @@
     readFieldValue,
     waitStable,
     addEntry,
+    auditPage,
+    deleteEntry,
     sectionEntries,
     addLinkRows,
     lostValues,

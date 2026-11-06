@@ -583,6 +583,20 @@ async function fillPage(pageNo = 1) {
     }
   }
 
+  // Check before you continue: dates in order, nothing left over from the site's resume import, no required box empty,
+  // and no entries your profile doesn't have (Workday's import sometimes adds a second, empty Education).
+  for (const fr of await callAll(tab.id, 'auditPage').catch(() => [])) {
+    const a = fr.result;
+    if (!a) continue;
+    for (const i of a.issues) rows.push(`<div class="item warn"><div class="q">🔎 ${esc(starless(i.label).slice(0, 90))} <span class="tag review">check</span></div><div class="v">${esc(i.problem)}</div></div>`);
+    const mine = { education: state.profile?.education?.length || 0, experience: state.profile?.experience?.length || 0 };
+    for (const kind of ['education', 'experience']) {
+      for (let n = a.entries[kind]; mine[kind] && n > mine[kind]; n--) {
+        rows.push(`<div class="item warn"><div class="q">🧹 ${kind === 'education' ? 'Education' : 'Work Experience'} ${n} isn't in your profile <span class="tag review">extra entry</span></div><div class="v">The site added it from your resume. <button class="mini" data-delentry="${fr.frameId}:${kind}:${n}">Delete it</button></div></div>`);
+      }
+    }
+  }
+
   // Account creation: password boxes are always yours (Auto Job never types passwords).
   const pw = (await callAll(tab.id, 'focusPassword').catch(() => [])).find((f) => f.result?.waiting);
   // Account memory: the sites where you made an account, so sign-in pages say so instead of you guessing.
@@ -611,6 +625,17 @@ async function fillPage(pageNo = 1) {
   $('#fillOut').innerHTML = `<p class="hint">Green outline = filled · orange = please check.</p>${state.log.join('')}`;
   return { count: rows.length, missingRequired: [...new Set(missingRequired)], failed, next, submit, errors, checkEmail };
 }
+
+// "Delete it" on an extra entry the site added: you pressed it, so remove that entry from the form.
+$('#fillOut').addEventListener('click', async (e) => {
+  const spec = e.target.dataset.delentry;
+  if (!spec) return;
+  const [frameId, kind, n] = spec.split(':');
+  const tab = await activeTab();
+  e.target.disabled = true;
+  const r = await callFrame(tab.id, Number(frameId), 'deleteEntry', kind, Number(n)).catch(() => null);
+  e.target.replaceWith(Object.assign(document.createElement('span'), { className: `tag ${r?.ok ? 'done' : 'err'}`, textContent: r?.ok ? 'deleted' : r?.reason || "couldn't delete it: use the page's Delete button" }));
+});
 
 // ---------- self-correction ----------
 // Fields the page marks as invalid, across frames, keyed like the rest of the panel ("frameId:fieldId").
@@ -1178,7 +1203,7 @@ async function submit() {
   const r = await callFrame(tab.id, target.frameId, 'clickSubmit');
   if (!r?.ok) throw new Error(r?.reason || 'Could not click submit');
   const job = currentJob();
-  await api('/api/applications', { method: 'POST', body: { title: job.title, company: job.company, location: job.location, url: state.job?.url || tab.url, status: 'applied', resume: state.resume?.filename, coverLetter: state.cover?.filename } }).catch(() => {});
+  await api('/api/applications', { method: 'POST', body: { title: job.title, company: job.company, location: job.location, url: state.job?.url || tab.url, description: String(state.job?.description || '').slice(0, 8000), status: 'applied', resume: state.resume?.filename, coverLetter: state.cover?.filename } }).catch(() => {});
   progress(`Submitted: clicked “${r.label}”`);
   loadTracker();
   setStep('review', true);
@@ -1369,6 +1394,7 @@ function renderProfile(p) {
   const initials = (p.name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   $('#profileOut').innerHTML = `
     <div class="profile-head"><div class="avatar">${esc(initials)}</div><div><b>${esc(p.name)}</b><div class="hint" style="margin:0">${esc(p.email)} · ${esc(p.phone)}</div></div></div>
+    ${locationNote(p)}
     <div class="stats">
       <div class="stat"><b>${p.experience?.length || 0}</b><span>roles</span></div>
       <div class="stat"><b>${p.projects?.length || 0}</b><span>projects</span></div>
@@ -1480,7 +1506,7 @@ function renderTracker() {
             <div class="timeline">${tl}<span class="tl">${m.label}${a.history?.length ? ` · ${ago(a.history.at(-1).at)}` : ''}</span></div>
             ${mailLine(a)}
             <textarea class="app-notes" data-notes="${a.id}" rows="1" placeholder="Add a note (recruiter name, test date, link…)">${esc(a.notes || '')}</textarea>
-            <div class="app-actions">${a.resume ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.resume)}" target="_blank" title="The resume you sent">📄 Resume sent</a>` : ''}${a.coverLetter ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.coverLetter)}" target="_blank">✉️ Cover letter</a>` : ''}${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}<button class="del" data-del="${a.id}">Delete</button></div>
+            <div class="app-actions">${a.resume ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.resume)}" target="_blank" title="The resume you sent">📄 Resume sent</a>` : ''}${a.coverLetter ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.coverLetter)}" target="_blank">✉️ Cover letter</a>` : ''}${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}${coachButtons(a)}<button class="del" data-del="${a.id}">Delete</button></div><div class="app-coach" id="coach-${a.id}"></div>
           </div>`;
         })
         .join('')
@@ -1496,6 +1522,25 @@ function mailLine(a) {
   if (a.status === 'applied' && days >= 12) return `<div class="app-mail k-quiet">⏳ No reply in ${days} days: consider a follow-up</div>`;
   return '';
 }
+// Roles without a location: forms ask where each role was, and without it the AI has to guess.
+function locationNote(p) {
+  const missing = (p.experience || []).filter((e) => !String(e.location || '').trim()).map((e) => String(e.company || 'a role').split(',')[0]);
+  return missing.length ? `<div class="item warn"><div class="q">📍 Add a location for ${esc(missing.join(', '))}</div><div class="v">Job forms ask where each role was. Without it, the answer is a guess.</div></div>` : '';
+}
+// Follow-up drafts and interview prep briefs on tracker cards (drafts to read and send yourself).
+function coachHtml(kind, r) {
+  if (kind === 'followup') return `<div class="coach"><b>${esc(r.subject || 'Follow-up')}</b><pre class="coach-text">${esc(r.body || '')}</pre><button class="mini" data-copy="1">Copy</button></div>`;
+  const list = (title, items, f) => (items || []).length ? `<p><b>${title}</b></p><ul>${items.map((x) => `<li>${f(x)}</li>`).join('')}</ul>` : '';
+  return `<div class="coach coach-text"><p>${esc(r.summary || '')}</p>${list('Likely questions', r.likelyQuestions, (x) => `${esc(x.q)}<br><span class="hint">${esc(x.angle)}</span>`)}${list('Your stories', r.yourStories, (x) => `<b>${esc(x.story)}</b>: ${esc(x.use)}`)}${list('Ask them', r.askThem, esc)}${list('Day before', r.checklist, esc)}</div>`;
+}
+function coachButtons(a) {
+  const days = Math.floor((Date.now() - new Date(a.appliedAt || a.createdAt)) / DAY);
+  const last = (a.mail || []).at(-1)?.kind;
+  const quiet = a.status === 'applied' && days >= 7 && !(a.mail || []).some((m) => m.kind !== 'applied');
+  const interviewing = /^(interview|assessment|hr)/.test(a.status || '') || ['interview', 'assessment'].includes(last);
+  return `${quiet ? `<button data-coach="followup" data-id="${a.id}">✉️ Follow-up draft</button>` : ''}${interviewing ? `<button data-coach="prep" data-id="${a.id}">🎯 Interview prep</button>` : ''}`;
+}
+
 const KIND_LABEL = { rejected: 'Rejected', interview: 'Interview invite', assessment: 'Assessment', offer: 'Offer', applied: 'Application received' };
 
 // Rejections and responses at a glance: what happens to your applications, and at which stage you're stopped.
@@ -1949,6 +1994,23 @@ $('#trackList').addEventListener('focusout', async (e) => {
   if (a && (a.notes || '') !== e.target.value) await patchApp(id, { notes: e.target.value }).catch(() => {});
 });
 $('#trackList').addEventListener('click', async (e) => {
+  const coach = e.target.dataset.coach;
+  if (coach) {
+    const id = e.target.dataset.id;
+    const box = $(`#coach-${id}`);
+    box.innerHTML = `<p class="hint">${coach === 'prep' ? 'Preparing your brief…' : 'Writing a draft…'}</p>`;
+    try {
+      box.innerHTML = coachHtml(coach, await api(`/api/applications/${id}/${coach}`, { method: 'POST' }));
+    } catch (err) {
+      box.innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+    }
+    return;
+  }
+  if (e.target.dataset.copy) {
+    await navigator.clipboard.writeText(e.target.closest('.app-coach').querySelector('.coach-text').innerText).catch(() => {});
+    e.target.textContent = 'Copied';
+    return;
+  }
   const del = e.target.dataset.del;
   const go = e.target.dataset.apply;
   if (del) {

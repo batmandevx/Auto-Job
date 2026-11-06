@@ -113,6 +113,16 @@ export function upsertApplication(entry) {
   return app;
 }
 
+// Extra things kept on an application (follow-up draft, prep brief) without touching its status or history.
+export function saveAppExtra(id, extra) {
+  const apps = read(APPS, []);
+  const app = apps.find((a) => a.id === id);
+  if (!app) return null;
+  Object.assign(app, extra);
+  write(APPS, apps);
+  return app;
+}
+
 export function updateApplication(id, patch) {
   const apps = read(APPS, []);
   const app = apps.find((a) => a.id === id);

@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>My Experience – Workday-style import check</title>
+  <style>
+    body { font: 15px system-ui; max-width: 700px; margin: 24px auto; padding: 0 16px; }
+    label, .lbl { display: block; margin-top: 12px; } input, textarea { padding: 8px; box-sizing: border-box; width: 100%; }
+    .date input { width: 70px; } .head { display: flex; justify-content: space-between; align-items: center; }
+  </style>
+</head>
+<body>
+  <!-- What Workday's own resume import left behind: a To date before From, a description that only says "Remote",
+       a second Education entry the profile doesn't have, and only two Websites rows. -->
+  <h2>Work Experience</h2>
+  <div class="entry" data-automation-id="workExperience-1">
+  <div class="head"><h3>Work Experience 1</h3><button type="button" class="del">Delete</button></div>
+  <label for="t1">Job Title*</label><input id="t1" value="Junior AI Engineer" />
+  <label for="c1">Company*</label><input id="c1" value="Calyptus" />
+  <label for="l1">Location</label><input id="l1" value="Remote" />
+  <div role="group" aria-labelledby="from1-l"><div id="from1-l" class="lbl">From*</div><div class="date">
+    <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" value="4" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" value="2026" /></div></div>
+  <div role="group" aria-labelledby="to1-l"><div id="to1-l" class="lbl">To*</div><div class="date">
+    <input data-automation-id="dateSectionMonth-input" aria-label="Month" placeholder="MM" value="2" /> / <input data-automation-id="dateSectionYear-input" aria-label="Year" placeholder="YYYY" value="2026" /></div></div>
+  <label for="d1">Role Description*</label><textarea id="d1">Remote</textarea>
+  </div>
+
+  <h2>Education</h2>
+  <div id="edu">
+    <div class="entry"><div class="head"><h3>Education 1</h3><button type="button" class="del">Delete</button></div>
+      <label for="s1">School or University*</label><input id="s1" value="Riverdale University" /></div>
+    <div class="entry"><div class="head"><h3>Education 2</h3><button type="button" class="del">Delete</button></div>
+      <label for="s2">School or University*</label><input id="s2" value="" /></div>
+  </div>
+
+  <h2>Websites</h2>
+  <div id="sites"></div>
+  <button type="button" id="addSite">Add Another</button>
+
+<script>
+  let n = 0;
+  const addSite = (v = '') => { n++; const d = document.createElement('div'); d.innerHTML = `<div class="head"><h3>Websites ${n}</h3><button type="button" class="del">Delete</button></div><label for="u${n}">URL*</label><input id="u${n}" value="${v}" />`; document.getElementById('sites').appendChild(d); };
+  addSite('https://example.dev'); addSite('https://linkedin.com/in/example');
+  document.getElementById('addSite').onclick = () => setTimeout(addSite, 150);
+  document.addEventListener('click', (e) => { if (e.target.classList.contains('del')) e.target.closest('.entry, .head')?.closest('.entry')?.remove(); });
+
+  window.selfTest = async () => {
+    const jf = window.__jobfill, fail = [];
+    const audit = await jf.auditPage();
+    const has = (re) => audit.issues.some((i) => re.test(`${i.label} ${i.problem}`));
+    if (!has(/work experience.*to.*ends before it starts/i)) fail.push('the To-before-From date was not flagged');
+    if (!has(/role description.*leftover/i)) fail.push('the "Remote" description was not flagged as leftover');
+    if (!has(/school.*required and still empty/i)) fail.push('the empty required school was not flagged');
+    if (has(/job title|company/i)) fail.push('a correct field was flagged: ' + JSON.stringify(audit.issues));
+    if (audit.entries.education !== 2) fail.push(`education entries counted ${audit.entries.education}, wanted 2`);
+    const added = await jf.addLinkRows(4);
+    const urls = document.querySelectorAll('#sites input').length;
+    if (urls !== 4) fail.push(`websites rows: ${urls} after adding ${added}, wanted 4`);
+    const del = await jf.deleteEntry('education', 2);
+    if (!del.ok || document.getElementById('s2')) fail.push('Education 2 was not deleted');
+    if (!document.getElementById('s1')) fail.push('Education 1 was deleted by mistake');
+    return { fields: audit.issues.length, fail, got: { issues: audit.issues.map((i) => `${i.label}: ${i.problem}`), entries: audit.entries, urls } };
+  };
+</script>
+</body>
+</html>

@@ -16,6 +16,8 @@ import { listHackathons } from './hackathons.js';
 import { mailConfigured, mailStatus, findVerification, sendApplication, smtpCheck } from './mail.js';
 import { renderResumePDF, renderCoverLetterPDF } from './pdf.js';
 import { answerFields } from './answer.js';
+import { followUpDraft, interviewPrep } from './coach.js';
+import { saveAppExtra } from './store.js';
 import { getProfile, saveProfile, listApplications, upsertApplication, updateApplication, deleteApplication, STATUSES, rememberAnswers, getDocument, saveDocument, removeDocument, DOCUMENT_KINDS, DEFAULT_ANSWERS, RESUME_DIR } from './store.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -297,6 +299,19 @@ app.post('/api/report-form', (req, res) => {
 
 // Trace outcomes from Gmail: rejections, interviews, assessments, offers, confirmations. apply=true moves the
 // confident ones (company and role matched); the rest come back for you to confirm.
+// Drafts for you to read: a follow-up email for a quiet application, an interview prep brief.
+for (const [kind, make] of [['followup', followUpDraft], ['prep', interviewPrep]]) {
+  app.post(`/api/applications/:id/${kind}`, route(async (req, res) => {
+    const a = listApplications().find((x) => x.id === req.params.id);
+    if (!a) return res.status(404).json({ error: 'No such application' });
+    const profile = getProfile();
+    if (!profile) return res.status(400).json({ error: 'Import your resume first' });
+    const out = await make(a, profile);
+    saveAppExtra(a.id, { [kind]: { ...out, at: new Date().toISOString() } });
+    res.json(out);
+  }));
+}
+
 app.post('/api/applications/trace', route(async (req, res) => {
   const apps = listApplications().filter((a) => a.status !== 'saved');
   if (!apps.length) return res.json({ checked: 0, updates: [], unmatched: [], applied: [] });

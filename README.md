@@ -436,6 +436,8 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 - Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
 - Each card has a status dropdown, a timeline, notes (recruiter, test date, link) and **Open job**.
 - Counters at the top filter the list. Search by company or role.
+- **✉️ Follow-up draft:** on applications with no reply after 7 days. A short, polite email naming the role, when you applied and one true reason you fit. Copy it and send it yourself; Auto Job never sends it.
+- **🎯 Interview prep:** on applications at assessment or interview (or when Gmail found an invite). A one-page brief from the job description, your profile and the company research: likely questions with how to answer from your own work, which of your stories to use, questions to ask them, and a checklist for the day before.
 
 ### Profile tab
 
@@ -446,6 +448,7 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 - **Standard answers:** work authorisation, sponsorship, notice period (text and days), expected and current CTC (text and annual number), relocation, fresher status, EEO answers, how you heard about jobs, government employment.
 - **Remembered answers:** answers from forms you reviewed and submitted, reused next time. Answers that change per job (salary, "why us", sponsorship) are never remembered.
 - **Server:** change the server address if you don't run it on port 8787.
+- **Missing locations:** the tab points out roles with no location, because forms ask where each role was and the answer would otherwise be a guess.
 
 ### Apply by email
 
@@ -562,10 +565,14 @@ What makes it work on real portals and not only on simple forms:
 | **Fuzzy options** | Scores options with synonyms: "India" beats "Indiana", B.Tech → Bachelor of Engineering → Bachelor's, "M" / "F" lists, "Yes, I agree." for agreements. |
 | **Sites that rewrite the form after the resume upload** (PyjamaHR) | Uploads files first, then fills, then re-checks every field at the end and refills anything that was wiped. |
 | **Repeating sections** | Adds Work Experience / Education / Language entries up to what your profile has. It fills editor boxes and presses their own *Add* / *Save*, and opens imported cards flagged "Fields to fix". |
-| **Link rows** ("Work Link [+]", "Link 1 / 2 / 3") | Presses "+" for more boxes and fills both portfolios, LinkedIn and GitHub, always with full `https://` URLs. |
+| **Link rows** ("Work Link [+]", "Link 1 / 2 / 3", Workday *Websites → Add Another*) | Presses "+" or *Add Another* for more boxes and fills both portfolios, LinkedIn and GitHub, always with full `https://` URLs. |
 | **Phone with a separate country-code box** | Enters just the 10 digits (also for "Mobile Phone Number With Area Code"). Phone extensions stay empty. |
-| **Account-style portals** (Harman, SuccessFactors-like) | A full postal address always comes from your profile as one unit, so the street, city, state and PIN can't disagree. Work Experience entries are matched to your roles **by the company already in them**, even if the site's own import listed them in a different order. Password boxes are pointed out for you to create (Chrome can suggest one). Each document is attached once per page. |
+| **Account-style portals** (Harman, SuccessFactors-like) | A full postal address always comes from your profile as one unit, so the street, city, state and PIN can't disagree. Work Experience entries are matched to your roles **by their title, company (typos allowed: "Microsfot") and start date**, each role used once, even if the site's own import listed them in a different order. Password boxes are pointed out for you to create (Chrome can suggest one). Each document is attached once per page. |
 | **Workday skills and school pickers** | "Type to Add Skills" gets your skills one by one (the job's ones first), searched and picked from the site's list. Schools not in the list get the page's own fallback ("School Not Listed", "Other"). |
+| **Workday's own resume import** (swapped dates, "Remote" as the role description, a company of just "AI") | Your profile is the source of truth: every part of each work entry (title, company, location, dates, "I currently work here", description) is rewritten from the matching role. Entries are recognised even when there's only one. |
+| **Hints under fields** ("Format: DD/MM/YYYY", "Amount in LPA", "Max 200 words", "Include country code") | Read with the question and followed: dates use the format shown, written answers are cut to the word limit at a sentence end. |
+| **Plain answer buttons, sliders, rating grids** | Yes / No and range buttons that only change colour are read as questions (only with a question written above them). Sliders are moved by keyboard. In a table of radios each row is a question and the column headers are its options. |
+| **Uploads the site empties** (Workday lists the file beside an empty box) | The listed file names are read, so the same resume isn't uploaded again on the next pass. |
 | **Validation errors** | Reads each field's error and the page's error banner. Common fixes (digits only, date format, missing `https://`, length) are instant. Anything else goes back to the AI with the site's message and the rejected value. |
 | **Hidden padding** (zero-width spaces in labels) | Strips it so the question is read correctly. |
 | **Job page vs form** | Ignores the site's search box, menus and "Save job" toggles, presses *Apply now*, and never presses a form's own "Apply" submit button. |
@@ -574,6 +581,8 @@ What makes it work on real portals and not only on simple forms:
 | **Boxes that ignore every scripted value** | Retyped with real keystrokes through Chrome's debugger. |
 
 **🐞 Report this form:** when a page doesn't fill well, press it under *Fill form*. It saves a privacy-scrubbed copy of the form (structure, labels, options and the site's errors; **no values**, and emails, phone numbers and links replaced) to `server/test/reports/`, which git ignores. Share that file and it becomes a regression test, so the fix stays fixed.
+
+**🔎 Check before you continue:** after filling, the page is read back. Dates that end before they start, descriptions that only repeat the company or location, and required boxes still empty are listed under the page's results. Entries your profile doesn't have (Workday's import sometimes adds a second, empty Education) get a **Delete it** button. Nothing is deleted unless you press it.
 
 **Characters a site forbids** (Workday: `< > [ ] " { } \`): descriptions are typed with single quotes, and when a site names forbidden characters, self-healing removes them and retypes.
 
@@ -690,6 +699,7 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | GET | `/api/otp` | Wait for a one-time code or verification link |
 | GET | `/api/hackathons` | Open hackathons from 8 platforms |
 | GET / POST / PATCH / DELETE | `/api/applications[/:id]` | The tracker |
+| POST | `/api/applications/:id/followup` · `/api/applications/:id/prep` | A follow-up email draft, an interview prep brief |
 
 ## Project structure
 
@@ -744,6 +754,8 @@ With the server running, open any of these and use the panel on it:
 | `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |
 | `/test/jobpage.html` | A job page with a search box and "Save job" before "Apply now" |
 | `/test/otp.html` · `/test/oracle.html` | One-time codes and 6-box inputs |
+| `/test/scan-versatile.html` | Checks itself: tooltip labels, hints (format, unit, word limit), plain Yes / No buttons, a slider, a rating grid, and buttons that are not questions |
+| `/test/scan-entries.html` | Checks itself: what Workday's import leaves behind (To before From, "Remote" as a description, an extra Education entry) and Websites → Add Another |
 
 All paths are on `http://localhost:8787`.
 
@@ -753,7 +765,7 @@ All paths are on `http://localhost:8787`.
 cd server && npm test
 ```
 
-GitHub runs the same tests on every push (`.github/workflows/test.yml`) with a made-up demo profile and no AI key. It prints each page with how many fields were filled and any that weren't, and exits with an error if something regressed. Pass page names to run only some, for example `node test/run-all.mjs tricky workday`. `heal.html` and `strict.html` exercise the panel's self-healing and real typing, so test those from the side panel.
+GitHub runs the same tests on every push (`.github/workflows/test.yml`) with a made-up demo profile and no AI key. It prints each page with how many fields were filled and any that weren't, and exits with an error if something regressed. Pass page names to run only some, for example `node test/run-all.mjs tricky workday`. `node test/run-all.mjs --reports` runs your saved *Report this form* snapshots instead, to see what still fails on real portals. `heal.html` and `strict.html` exercise the panel's self-healing and real typing, so test those from the side panel.
 
 ## Troubleshooting
 

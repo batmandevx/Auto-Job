@@ -5,9 +5,15 @@
 // Uses your own profile from data/. heal.html and strict.html need the panel's self-healing / real typing,
 // so they're expected to show "not filled" here: test those from the side panel.
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 const BASE = process.env.AUTOJOB_URL || 'http://localhost:8787', PORT = 9337;
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'wdreal', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc', 'scan-versatile'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'wdreal', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc', 'scan-versatile', 'scan-entries'];
+// --reports: run your saved "Report this form" snapshots (server/test/reports, never committed) to see what still fails.
+if (process.argv.includes('--reports')) {
+  const dir = new URL('./reports/', import.meta.url);
+  PAGES.splice(0, PAGES.length, ...(fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.html')).map((f) => `reports/${f.slice(0, -5)}`) : []));
+}
 const chrome = spawn(CHROME, [...(process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []), '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/aj-suite-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 50 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }

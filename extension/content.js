@@ -109,6 +109,17 @@
     return { options, label: [question, rowLabel].filter(Boolean).join(' › ') };
   }
 
+  // File names a site shows next to its upload box ("Resume.pdf  89 KB  Successfully Uploaded!").
+  function filesListedNear(el) {
+    let box = el.parentElement;
+    for (let i = 0; box && i < 6; i++, box = box.parentElement) {
+      if (box.querySelectorAll('input[type="file"]').length > 1) break;
+      const names = (box.innerText || '').match(/[^\n\\/]{1,160}?\.(pdf|docx?|rtf|txt|odt|png|jpe?g)\b/gi);
+      if (names?.length) return [...new Set(names.map((n) => clean(n)))].slice(0, 20);
+    }
+    return [];
+  }
+
   // The question just above a block (its own aria label, or the text before it, within a few levels).
   function questionAbove(box) {
     const ids = box.getAttribute('aria-labelledby');
@@ -562,6 +573,9 @@
         if (CAPTCHA_RE.test(`${label} ${el.placeholder} ${el.name} ${el.id}`)) f.type = 'captcha';
         if (type === 'file') {
           f.accept = el.accept || '';
+          // Workday and others empty the box after an upload and list the file beside it instead.
+          const listed = filesListedNear(el);
+          if (listed.length) f.uploaded = listed;
           f.filled = el.files?.length > 0;
         } else f.filled = !!clean(el.value) && !LINK_RE.test(label) && !/required|must have a value|cannot be (empty|blank)/i.test(errorFor(el)); // link boxes are always set from your profile; a box the site calls empty isn't filled
       }
@@ -631,11 +645,22 @@
     labelRepeatedSections(fields);
     // Each Work Experience entry carries the company already in it, so answers go to that role even when the site's
     // own resume import put the entries in a different order than your profile.
+    // Title and start date too, so a site import with typos ("Microsfot", a company of just "AI") still finds the right role.
+    const WORK = /work\s*experience|employment|work history|professional experience|experience\s*\d*$/i;
+    const ROLE_PART = /job\s*title|position|^title|designation|company|employer|organi[sz]ation|location|^from\b|^to\b|start|end\s*date|description|responsibilit|currently work|i work here/i;
     for (const f of fields) {
       if (!f.entry || !f.section) continue;
-      const co = fields.find((x) => x.section === f.section && x.entry === f.entry && /company|employer|organi[sz]ation/i.test(base(x)) && !/title|position/i.test(base(x)));
-      const shown = co && clean(readFieldValue(co.id));
-      if (shown) f.entryCompany = shown.slice(0, 80);
+      const inEntry = (re, not) => fields.filter((x) => x.section === f.section && x.entry === f.entry && re.test(base(x)) && !(not && not.test(base(x))));
+      const shownIn = (list) => clean(list.map((x) => readFieldValue(x.id)).filter(Boolean).join('/'));
+      const co = shownIn(inEntry(/company|employer|organi[sz]ation/i, /title|position/i).slice(0, 1));
+      const title = shownIn(inEntry(/job\s*title|position\s*title|^title\b|designation/i).slice(0, 1));
+      const from = shownIn(inEntry(/^from\b|start\s*date|^start\b/i).sort((x, y) => (x.datePart === 'year') - (y.datePart === 'year')));
+      if (co) f.entryCompany = co.slice(0, 80);
+      if (title) f.entryTitle = title.slice(0, 80);
+      if (from) f.entryFrom = from.slice(0, 20);
+      // Work entries the site filled in from your resume are often garbled (typos, swapped dates, "Remote" as the
+      // description): your profile is the source of truth, so every part of a role is written from it.
+      if (WORK.test(f.section) && ROLE_PART.test(base(f)) && f.type !== 'file') f.filled = false;
     }
     return { url: location.href, fields, next: nextLabel(), submit: submitLabel(), errors: errorTexts(), checkEmail: checkEmailPage() };
   }

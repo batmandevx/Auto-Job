@@ -249,13 +249,12 @@ function experienceValue(field, profile) {
   const jobLabel = last.length <= 60 && !/ctc|cost to|salary|compensation/i.test(last) && /job\s*title|position\s*title|^title$|designation|^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer)(\s*name)?\W*$|currently work|role description/i.test(last);
   if (!EXP_SECTION.test(field.section || '') && !jobLabel) return undefined;
   if (/years|total|how many|months of/i.test(last)) return undefined;
-  const byCompany = field.entryCompany && (profile.experience || []).find((x) => { const a = normT(String(x.company || '').split(',')[0]); const b = normT(field.entryCompany); return a.length > 2 && (b.includes(a) || a.includes(b)); });
-  const e = byCompany || profile.experience?.[(field.entry || 1) - 1];
+  const e = profile.experience?.[field.roleIndex ?? (field.entry || 1) - 1];
   if (!e) return undefined;
   if (/currently work|current(ly)?\s*(employed|role|job)|i work here|still work/i.test(last)) return isPresent(e.end);
   // Workday (and others) reject < > [ ] " { } \ in free text: straight double quotes become single ones.
   if (/description|responsibilit|duties|summary|achievements?|what did you do/i.test(last)) return safeText((e.bullets || []).map((b) => `• ${b}`).join('\n')) || undefined;
-  if (/job\s*title|position|^title$|designation|^role$/i.test(last)) return e.title;
+  if (/job\s*title|position|^title$|designation|^role$/i.test(last)) return String(e.title || '').replace(/\s*\([^)]*\)/g, '').trim() || e.title; // "(promoted from …)" is a note, not the title
   if (/^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer|organi[sz]ation)(\s*name)?\W*$|name of (the )?(company|employer)/i.test(last)) return String(e.company || '').split(',')[0].trim() || e.company;
   if (/location|city/i.test(last)) return e.location || undefined;
   if (/^(from|start)|start\s*date|date\s*from/i.test(last)) return e.start;
@@ -350,7 +349,62 @@ const CONSENT = /\b(i have read|i've read|i agree|i accept|i consent|i acknowled
 // The "yes" choice of an agreement dropdown / radio: "I Agree", "Agree", "Yes", "I accept", "I understand"…
 const AGREE_OPTION = /^(i\s+)?(agree|accept|consent|acknowledge|understand|confirm|yes)\b/i;
 
+// Which of your roles each Work Experience entry on the page is: by title, company (typos allowed: "Microsfot") and
+// start date, each role used once. Entries that match nothing take your remaining roles in order.
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const monthYear = (s) => {
+  const t = String(s || '').toLowerCase();
+  const y = t.match(/(19|20)\d{2}/)?.[0];
+  const m = MONTHS.findIndex((x) => t.includes(x)) + 1 || Number(t.match(/^\s*(\d{1,2})\s*[/.\- ]/)?.[1]) || 0;
+  return y ? `${m}/${y}` : '';
+};
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function roleScore(entry, role) {
+  let score = 0;
+  const co = normT(entry.company), mine = normT(String(role.company || '').split(',')[0]), full = normT(role.company);
+  if (co && mine) {
+    if (co === mine || (co.length >= 4 && (full.includes(co) || co.includes(mine)))) score += 4;
+    else if (Math.min(co.length, mine.length) >= 5 && editDistance(co, mine) <= 2) score += 3; // "microsfot"
+  }
+  const t = normT(entry.title), rt = normT(role.title);
+  if (t && rt) {
+    if (t === rt) score += 4;
+    else if (t.length >= 6 && (rt.startsWith(t) || t.startsWith(rt) || rt.includes(t))) score += 3;
+  }
+  const from = monthYear(entry.from);
+  if (from && from === monthYear(role.start)) score += 2;
+  else if (from && from.split('/')[1] === monthYear(role.start).split('/')[1]) score += 0.5;
+  return score;
+}
+function assignRoles(fields, profile) {
+  const roles = profile.experience || [];
+  const entries = new Map();
+  for (const f of fields) {
+    if (!f.entry || !EXP_SECTION.test(f.section || '')) continue;
+    const key = `${f.section}#${f.entry}`;
+    const e = entries.get(key) || { company: '', title: '', from: '', entry: f.entry };
+    e.company ||= f.entryCompany || '';
+    e.title ||= f.entryTitle || '';
+    e.from ||= f.entryFrom || '';
+    entries.set(key, e);
+  }
+  const pairs = [];
+  for (const [key, e] of entries) roles.forEach((r, i) => { const s = roleScore(e, r); if (s >= 3) pairs.push({ key, i, s }); });
+  pairs.sort((a, b) => b.s - a.s);
+  const byKey = new Map(), used = new Set();
+  for (const p of pairs) if (!byKey.has(p.key) && !used.has(p.i)) { byKey.set(p.key, p.i); used.add(p.i); }
+  const free = roles.map((_, i) => i).filter((i) => !used.has(i));
+  for (const [key] of [...entries].sort((a, b) => a[1].entry - b[1].entry)) if (!byKey.has(key) && free.length) byKey.set(key, free.shift());
+  return fields.map((f) => (byKey.has(`${f.section}#${f.entry}`) ? { ...f, roleIndex: byKey.get(`${f.section}#${f.entry}`) } : f));
+}
+
 export async function answerFields({ fields, profile, job, coverLetter, errors = {}, pageErrors = [] }) {
+  fields = assignRoles(fields, profile);
   const values = {};
   const source = {};
   const pending = [];

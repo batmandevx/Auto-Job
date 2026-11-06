@@ -433,6 +433,11 @@ async function uploadFiles(tab, files, rows, missingRequired) {
     used.add(kind);
     const doc = await uploadFor(kind).catch((e) => ({ error: e.message }));
     let tag;
+    // Already there from an earlier pass (the site lists it beside the box): uploading again would add a duplicate.
+    if (doc?.filename && (f.uploaded || []).some((n) => n.toLowerCase() === doc.filename.toLowerCase())) {
+      rows.push(`<div class="item" style="--i:${rows.length}"><div class="q">📎 ${esc(starless(f.label).slice(0, 100))} <span class="src">${kind}</span></div><div class="v"><span class="tag done">already uploaded</span> ${esc(doc.filename)}</div></div>`);
+      continue;
+    }
     if (doc?.base64) {
       const r = await callFrame(tab.id, f.frameId, 'uploadFile', f.id, doc.base64, doc.filename, doc.mime);
       tag = r?.ok ? `<span class="tag done">uploaded</span> ${esc(doc.filename)}` : `<span class="tag err">${esc(r?.reason || 'upload failed')}</span>`;

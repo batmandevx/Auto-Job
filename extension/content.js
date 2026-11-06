@@ -1,7 +1,7 @@
 // Injected into every frame of the job page by the side panel.
 // Exposes window.__jobfill: scan / fill / upload / next / submit helpers. Never submits on its own.
 (() => {
-  if (window.__jobfill?.version === 8) return;
+  if (window.__jobfill?.version === 9) return;
 
   const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'password']);
   const clean = (s) => (s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim(); // zero-width padding (PyjamaHR) is not text
@@ -31,7 +31,7 @@
     return shown(el) && !(el.readOnly && el.getAttribute('role') !== 'combobox' && !datePicker);
   };
 
-  const CONTROL = 'input, select, textarea, [contenteditable="true"], [role="combobox"], [role="radio"], [role="checkbox"], [role="switch"], [role="listbox"], button[aria-haspopup="listbox"]';
+  const CONTROL = 'input, select, textarea, [contenteditable="true"], [role="combobox"], [role="radio"], [role="checkbox"], [role="switch"], [role="listbox"], [role="slider"], [role="spinbutton"]:not(input), button[aria-haspopup="listbox"]';
 
   const textOf = (node) => {
     if (!node) return '';
@@ -52,6 +52,7 @@
       if (t) return t;
     }
     if (el.getAttribute('aria-label')) return clean(el.getAttribute('aria-label'));
+    if (el.title && clean(el.title).length > 2) return clean(el.title);
     let node = el.parentElement;
     let best = '';
     for (let i = 0; node && i < 6; i++, node = node.parentElement) {
@@ -64,6 +65,64 @@
     const wd = el.closest('[data-automation-id^="formField-"]')?.getAttribute('data-automation-id');
     const wdLabel = wd && wd.replace(/^formField-/, '').replace(/.*Section_/, '').replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
     return (best || wdLabel || clean(el.placeholder || el.name || el.id)).slice(0, 300);
+  }
+
+  // The hint a site writes under a field ("Include your country code", "Max 200 words", "In LPA", "DD/MM/YYYY"):
+  // it tells the answer its format and limits. Error messages are not hints.
+  const HELP_SEL = '[class*="hint" i], [class*="help" i], [class*="description" i], [class*="instruction" i], [class*="subtext" i], [class*="sublabel" i], [class*="caption" i], small, [id*="hint" i], [id*="help" i]';
+  const errorish = (n) => n.matches('[role="alert"], [aria-live="assertive"]') || /error|invalid/i.test(`${n.id} ${typeof n.className === 'string' ? n.className : ''}`);
+  function helpFor(el, label = '') {
+    let t = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean)
+      .map((id) => byIdIn(el, id)).filter((n) => n && !errorish(n)).map(textOf).join(' ');
+    if (!clean(t)) {
+      let node = el.parentElement;
+      for (let i = 0; node && i < 4; i++, node = node.parentElement) {
+        if ([...node.querySelectorAll(CONTROL)].some((c) => c !== el && !el.contains(c) && !c.contains(el) && shown(c))) break;
+        const hint = [...node.querySelectorAll(HELP_SEL)].find((n) => !n.contains(el) && !n.querySelector(CONTROL) && !errorish(n) && shown(n) && clean(n.textContent));
+        if (hint) { t = textOf(hint); break; }
+      }
+    }
+    t = clean(t);
+    if (!t || t.length < 3 || clean(label).includes(t)) return '';
+    return t.slice(0, 220);
+  }
+  // "Max 200 words", "in not more than 150 words", "100-300 words".
+  const wordLimit = (text) => {
+    const m = String(text).match(/(?:max(?:imum)?\.?|up to|no more than|not (?:more than|exceed(?:ing)?)|limit(?:ed)? to|within|under|less than)\s*(?:of\s*)?(\d{2,4})\s*words|(\d{2,4})\s*words?\s*(?:max|maximum|or (?:less|fewer)|limit)|\d{2,4}\s*(?:-|–|to)\s*(\d{2,4})\s*words/i);
+    return m ? Number(m[1] || m[2] || m[3]) : undefined;
+  };
+  const DATE_FMT_RE = /\b(?:DD|MM|YYYY|YY)(?:[/.\- ](?:DD|MM|YYYY|YY)){1,2}\b/i;
+
+  // A question laid out as a table (a rating grid): each row is one group, the column headers name its options.
+  function gridContext(members) {
+    const cell = members[0].closest('td, [role="gridcell"], [role="cell"]');
+    const row = cell?.closest('tr, [role="row"]');
+    const table = row?.closest('table, [role="grid"], [role="table"]');
+    if (!table || !members.every((m) => row.contains(m))) return null;
+    const head = table.querySelector('thead tr, [role="row"]:has([role="columnheader"])') || table.querySelector('tr');
+    if (!head || head === row) return null;
+    const heads = [...head.children].map((c) => clean(c.textContent));
+    const cells = [...row.children];
+    const options = members.map((m) => heads[cells.findIndex((c) => c.contains(m))] || '');
+    const rowLabel = clean(textOf(cells.find((c) => !c.querySelector('input, [role="radio"], [role="checkbox"]'))));
+    const question = clean(table.querySelector('caption')?.textContent || table.getAttribute('aria-label') || headingBefore(table) || textOf(table.previousElementSibling));
+    return { options, label: [question, rowLabel].filter(Boolean).join(' › ') };
+  }
+
+  // The question just above a block (its own aria label, or the text before it, within a few levels).
+  function questionAbove(box) {
+    const ids = box.getAttribute('aria-labelledby');
+    if (ids) return clean(ids.split(/\s+/).map((id) => textOf(byIdIn(box, id))).join(' '));
+    if (box.getAttribute('aria-label')) return clean(box.getAttribute('aria-label'));
+    for (let n = box, i = 0; n && i < 3; i++, n = n.parentElement) {
+      for (let p = n.previousElementSibling, k = 0; p && k < 2; p = p.previousElementSibling, k++) {
+        if (p.querySelector?.(`${CONTROL}, button, [role="button"]`) || p.matches(`${CONTROL}, button, [role="button"]`) || !shown(p)) break;
+        const t = textOf(p);
+        if (t.length >= 3 && t.length <= 300) return t;
+      }
+      if (n.parentElement && [...n.parentElement.children].filter(shown).length > 2) break;
+    }
+    return '';
   }
 
   function groupLabel(members) {
@@ -85,6 +144,7 @@
   }
 
   const optionLabel = (el) => {
+    if (el.dataset?.jfOption) return el.dataset.jfOption;
     if (el.tagName === 'INPUT') return clean(el.labels?.[0] ? textOf(el.labels[0]) : el.getAttribute('aria-label') || el.value);
     return clean(el.getAttribute('aria-label') || el.textContent);
   };
@@ -276,6 +336,11 @@
     return null;
   }
 
+  // On or off, for native inputs, ARIA widgets, and plain buttons that only change their class or data-state when picked.
+  const isChecked = (m) => m.checked ?? (['aria-checked', 'aria-pressed', 'aria-selected'].some((a) => m.getAttribute(a) === 'true') ||
+    /^(on|checked|active|selected)$/i.test(m.dataset?.state || '') ||
+    (!!m.dataset?.jfPlain && /(^|[\s_-])(selected|active|is-?active|is-?selected|checked|chosen|pressed)($|[\s_-])/i.test(typeof m.className === 'string' ? m.className : '')));
+
   // ---------- scan ----------
   let counter = 0;
   const groups = new Map(); // field id -> member elements (radio / checkbox groups, button groups)
@@ -466,7 +531,11 @@
       const f = { id, label, name: el.name || '', placeholder: el.placeholder || '', required: isRequired(el, label) };
       if (sectionPart) f.datePart = sectionPart;
       const kind = comboKind(el);
-      if (kind) {
+      if (role === 'slider' || role === 'spinbutton') {
+        f.type = 'number';
+        Object.assign(f, { min: el.getAttribute('aria-valuemin') || undefined, max: el.getAttribute('aria-valuemax') || undefined });
+        f.filled = el.getAttribute('aria-valuenow') != null && el.getAttribute('aria-valuenow') !== el.getAttribute('aria-valuemin') && !f.required;
+      } else if (kind) {
         f.type = kind;
         f.filled = !!clean(el.value || (kind === 'dropdown' ? selectedText(el) : ''));
         if (kind === 'dropdown' && !f.filled) f.options = await probeOptions(el);
@@ -496,6 +565,13 @@
           f.filled = el.files?.length > 0;
         } else f.filled = !!clean(el.value) && !LINK_RE.test(label) && !/required|must have a value|cannot be (empty|blank)/i.test(errorFor(el)); // link boxes are always set from your profile; a box the site calls empty isn't filled
       }
+      const help = helpFor(el, label);
+      if (help) {
+        f.help = help;
+        if (!f.format && DATE_FMT_RE.test(help) && /date|dob|birth|from|to|start|end|when/i.test(label)) f.format = help.match(DATE_FMT_RE)[0];
+      }
+      const words = wordLimit(`${label} ${help} ${f.placeholder}`);
+      if (words) f.maxWords = words;
       if (editingCard?.box?.contains(el)) f.inEditor = true;
       fields.push(f);
     }
@@ -518,6 +594,26 @@
       if (btns.length < 2 || btns.some((b) => seen.has(b))) continue;
       btns.forEach((b) => seen.add(b));
       addChoice(fields, btns, 'radio');
+    }
+
+    // Plain answer buttons ("Yes" "No", "0-1 yrs" "1-3 yrs"…) that only restyle themselves when picked.
+    const ACTION_BTN = /^(add|remove|delete|upload|attach|browse|next|back|previous|continue|submit|apply|save|cancel|close|edit|clear|reset|done|ok|sign|log|skip|view|show|hide|more|less|\+|×|x)\b/i;
+    const plainParents = new Set(deepAll('button[type="button"], [role="button"]:not(button)').filter((b) => !seen.has(b) && !b.dataset.jfId && !b.hasAttribute('aria-pressed') && !b.hasAttribute('aria-haspopup') && !b.hasAttribute('aria-expanded')).map((b) => b.parentElement).filter(Boolean));
+    for (const grp of plainParents) {
+      if (grp.closest('[data-jf-ignore]') || siteChrome(grp) || grp.closest('[role="dialog"][aria-modal="true"] footer, [role="toolbar"], [role="tablist"], [role="menu"]')) continue;
+      const kids = [...grp.children].filter(shown);
+      const btns = kids.filter((b) => b.matches('button[type="button"], [role="button"]'));
+      if (btns.length < 2 || btns.length > 8 || btns.length !== kids.length) continue;
+      const texts = btns.map((b) => clean(b.textContent));
+      if (texts.some((t) => !t || t.length > 40 || ACTION_BTN.test(t)) || new Set(texts.map(norm)).size !== texts.length) continue;
+      if (btns.some((b) => seen.has(b) || b.querySelector('input, select, textarea, svg:only-child'))) continue;
+      // Only a question written right above them makes them a field (a pager or toolbar has none).
+      const question = questionAbove(grp);
+      if (!question) continue;
+      btns.forEach((b) => { seen.add(b); b.dataset.jfPlain = '1'; });
+      addChoice(fields, btns, 'radio');
+      fields[fields.length - 1].label = question;
+      fields[fields.length - 1].required ||= /\*\s*$/.test(question);
     }
 
     // A separate "Country Phone Code" field (Workday): the phone number goes in without the code.
@@ -622,7 +718,7 @@
   function addChoice(fields, members, type) {
     const id = newId(members[0]);
     members.forEach((m) => (m.dataset.jfId = id));
-    const checked = (m) => m.checked ?? (m.getAttribute('aria-checked') === 'true' || m.getAttribute('aria-pressed') === 'true');
+    const checked = isChecked;
     if (type === 'checkbox' && members.length === 1) {
       // A lone ARIA switch's own text is its state ("Off"), not its question.
       const el = members[0];
@@ -632,12 +728,19 @@
       return;
     }
     groups.set(id, members);
-    const label = groupLabel(members);
+    let label = groupLabel(members);
+    let options = members.map(optionLabel);
+    const grid = gridContext(members);
+    if (grid && grid.options.every(Boolean) && options.some((o) => !o || /^\d{1,2}$|^on$/i.test(o))) {
+      options = grid.options;
+      if (grid.label) label = grid.label;
+      members.forEach((m, k) => (m.dataset.jfOption = options[k]));
+    }
     fields.push({
       id,
       type: type === 'radio' ? 'radio' : 'checkbox-group',
       label,
-      options: members.map(optionLabel),
+      options,
       filled: members.some(checked),
       required: members.some((m) => isRequired(m, '')) || /\*\s*$/.test(label),
     });
@@ -733,7 +836,6 @@
     target.style.outlineOffset = '2px';
   }
 
-  const isChecked = (m) => m.checked ?? (m.getAttribute('aria-checked') === 'true' || m.getAttribute('aria-pressed') === 'true');
   const truthy = (v) => v === true || /^(true|yes|y|1|agree|checked|on)$/i.test(String(v).trim());
 
   function formatFor(el, value) {
@@ -762,7 +864,7 @@
   }
 
   const press = (target, key) => {
-    const init = { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key, keyCode: { Enter: 13, ArrowDown: 40, Escape: 27, Tab: 9 }[key] || key.toUpperCase().charCodeAt(0), bubbles: true, cancelable: true };
+    const init = { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key, keyCode: { Enter: 13, ArrowDown: 40, ArrowUp: 38, ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35, Escape: 27, Tab: 9 }[key] || key.toUpperCase().charCodeAt(0), bubbles: true, cancelable: true };
     target.dispatchEvent(new KeyboardEvent('keydown', init));
     target.dispatchEvent(new KeyboardEvent('keyup', init));
   };
@@ -946,6 +1048,13 @@
       for (const w of wanted) {
         const i = bestMatch(opts, String(w));
         if (i < 0) continue;
+        if (members[i].dataset.jfPlain) {
+          // No state the page shows us: click once (a second click could toggle it back off).
+          if (!isChecked(members[i])) clickLikeUser(members[i]);
+          await sleep(150);
+          hit = true;
+          continue;
+        }
         if (!isChecked(members[i])) members[i].click();
         if (!isChecked(members[i])) {
           clickLikeUser(members[i].labels?.[0] || members[i].closest('label') || members[i]);
@@ -971,6 +1080,23 @@
     const kind = comboKind(el);
     let status = 'filled';
 
+    if (role === 'slider' || role === 'spinbutton') {
+      // Sliders move by keyboard: Home, then arrow steps until the value is reached.
+      const want = Number(String(value).match(/-?\d+(\.\d+)?/)?.[0]);
+      if (!Number.isFinite(want)) return `"${value}" is not a number`;
+      const now = () => Number(el.getAttribute('aria-valuenow'));
+      el.focus();
+      press(el, 'Home');
+      await sleep(60);
+      for (let k = 0; k < 400 && now() < want; k++) {
+        const prev = now();
+        press(el, 'ArrowRight');
+        await sleep(10);
+        if (now() === prev) break;
+      }
+      mark(el, review);
+      return Math.abs(now() - want) <= Math.max(1, (Number(el.getAttribute('aria-valuemax')) - Number(el.getAttribute('aria-valuemin'))) / 100) ? 'filled' : `the slider stopped at ${now()}`;
+    }
     if (el.type === 'checkbox' || role === 'checkbox' || role === 'switch') {
       if (isChecked(el) !== truthy(value)) el.click();
       if (isChecked(el) !== truthy(value)) {
@@ -1886,7 +2012,7 @@
   const pageKey = () => deepAll(CONTROL).filter(shown).map((e) => e.name || e.id || labelFor(e).slice(0, 30)).join('|').slice(0, 2000) + '#' + location.href;
 
   window.__jobfill = {
-    version: 8,
+    version: 9,
     scan,
     fill,
     uploadFile,

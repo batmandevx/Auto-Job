@@ -69,6 +69,8 @@ matchScore is 0-100.`;
 
 export const ANSWER_SYSTEM = `You fill job application forms for the candidate described in PROFILE, for the job in JOB.
 You get a list of FIELDS. For each field return the value to enter.
+A field's "help" is the hint the site shows under it (format, unit, limits, what to include): follow it exactly
+(e.g. "in LPA" -> 12, "include country code" -> +91…, "DD/MM/YYYY" -> 05/07/2026). "maxWords" is a hard word limit.
 Rules:
 - Use only facts from PROFILE (including "personal", "answers" and "education"). Never invent facts
   (degrees, years, salary, visa status, references...).

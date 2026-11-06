@@ -394,8 +394,8 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
       PROFILE: forModel,
       JOB: { title: job?.title, company: job?.company, location: job?.location, description: (job?.description || '').slice(0, 12000) },
       ...(researchFor(job || {}) ? { COMPANY_FACTS: researchFor(job || {}) } : {}),
-      FIELDS: pending.map(({ id, label, type, options, required, maxLength, placeholder, min, max, format, section, entry }) => ({
-        id, label, type, options, required, maxLength, placeholder, min, max, format, section, entry,
+      FIELDS: pending.map(({ id, label, type, options, required, maxLength, maxWords, placeholder, help, min, max, format, section, entry }) => ({
+        id, label, type, options, required, maxLength, maxWords, placeholder, help, min, max, format, section, entry,
         ...(errors[id] ? { rejectedValue: errors[id].previous, siteError: errors[id].message } : {}),
       })),
       ...(pageErrors.length ? { PAGE_ERRORS: pageErrors.slice(0, 10) } : {}),
@@ -411,7 +411,9 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
     for (const [id, v] of Object.entries(out.values || {})) {
       const f = byId.get(id);
       if (!f || v === null) continue;
-      values[id] = typeof v === 'string' && f.maxLength ? fitLength(polish(v), f.maxLength) : typeof v === 'string' ? polish(v) : v;
+      let text = typeof v === 'string' ? polish(v) : v;
+      if (typeof text === 'string' && f.maxWords) text = fitWords(text, f.maxWords);
+      values[id] = typeof text === 'string' && f.maxLength ? fitLength(text, f.maxLength) : text;
       source[id] = 'ai';
     }
     needsReview = (out.needsReview || []).filter((id) => byId.has(id));
@@ -427,6 +429,15 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
   for (const f of fields) if (source[f.id] === 'cover-letter' && !needsReview.includes(f.id)) needsReview.push(f.id);
   for (const id of consentIds) if (!needsReview.includes(id)) needsReview.push(id);
   return { values, needsReview, source };
+}
+
+// Keep within a word limit ("max 150 words"), ending on a whole sentence when possible.
+function fitWords(text, max) {
+  const words = text.split(/\s+/);
+  if (words.length <= max) return text;
+  const cut = words.slice(0, max).join(' ');
+  const end = Math.max(cut.lastIndexOf('. '), cut.endsWith('.') ? cut.length - 1 : -1);
+  return end > cut.length * 0.6 ? cut.slice(0, end + 1) : cut.replace(/[,;:]?$/, '.');
 }
 
 // Trim to the field's limit at a sentence boundary when possible.

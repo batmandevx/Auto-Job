@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process';
 const BASE = process.env.AUTOJOB_URL || 'http://localhost:8787', PORT = 9337;
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'wdreal', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['form', 'hard', 'tricky', 'recruitcrm', 'sections', 'pyjama', 'fixcard', 'langs', 'workday', 'wdexp', 'wdstate', 'wdreal', 'juspay', 'jobpage', 'otp', 'oracle', 'harman', 'pwc', 'scan-versatile'];
 const chrome = spawn(CHROME, [...(process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []), '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/aj-suite-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 50 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
@@ -21,6 +21,17 @@ let failures = 0;
 for (const p of PAGES) {
   errors.length = 0;
   await send('Page.navigate', { url: `${BASE}/test/${p}.html` }); await sleep(1800);
+  // scan-* pages check themselves (what the scan understood, and filling the widget kinds) without the AI.
+  if (p.startsWith('scan-')) {
+    await js(`new Promise((ok) => { const s = document.createElement('script'); s.src = '/test/ext/content.js?' + Date.now(); s.onload = ok; s.onerror = ok; document.head.appendChild(s); })`);
+    const r = JSON.parse((await js(`window.selfTest().then((r) => JSON.stringify(r)).catch((e) => JSON.stringify({ fail: ['selfTest threw: ' + e.message] }))`)) || '{"fail":["no result"]}');
+    if (r.fail.length || errors.length) failures++;
+    console.log(`\n=== ${p}: ${r.fail.length ? 'FAILED' : 'done'} · ${r.fields ?? '?'} fields · ${r.fail.length} problem(s) · page errors: ${errors.length}`);
+    for (const f of r.fail) console.log('   ✗', f.slice(0, 160));
+    for (const e of errors.slice(0, 3)) console.log('   ! JS', e.slice(0, 160));
+    if (r.got) console.log('   report:', JSON.stringify(r.got));
+    continue;
+  }
   await js(`(async () => { const load = (u) => new Promise((ok) => { const s = document.createElement('script'); s.src = u + '?' + Date.now(); s.onload = ok; s.onerror = ok; document.head.appendChild(s); }); await load('/test/ext/content.js'); await load('/test/harness.js'); })()`);
   let done = false;
   for (let i = 0; i < 150 && !done; i++) { await sleep(1000); done = await js(`!!(window.__harness && (window.__harness.done || window.__harness.error))`); }

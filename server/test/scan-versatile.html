@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Versatile form – field understanding test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    .q { margin: 18px 0; } .q p { margin: 0 0 6px; font-weight: 600; }
+    .hint { color: #666; font-size: 13px; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+    .opts button { padding: 6px 14px; margin-right: 6px; border: 1px solid #999; background: #fff; border-radius: 16px; }
+    .opts button.selected { background: #2563eb; color: #fff; }
+    [role="slider"] { width: 300px; height: 8px; background: #ddd; border-radius: 4px; position: relative; }
+    table { border-collapse: collapse; } td, th { padding: 4px 10px; text-align: center; }
+  </style>
+</head>
+<body>
+  <!-- A field labelled only by its tooltip. -->
+  <div class="q"><input id="name" title="Full Name" /></div>
+
+  <!-- Hints under the field: format, unit, country code, word limit. -->
+  <div class="q"><label for="dob">Date of Birth *</label><input id="dob" /><div class="hint">Format: DD/MM/YYYY</div></div>
+  <div class="q"><label for="ctc">Current CTC *</label><input id="ctc" aria-describedby="ctc-help" /><span id="ctc-help" class="hint">Amount in LPA, e.g. 6.5</span></div>
+  <div class="q"><label for="mob">Mobile number</label><input id="mob" type="tel" /><small>Include your country code</small></div>
+  <div class="q"><label for="why">Why do you want to join us?</label><textarea id="why"></textarea><div class="help-text">Maximum 50 words</div></div>
+
+  <!-- Plain answer buttons that only change their class when picked. -->
+  <div class="q"><p>Are you willing to relocate? *</p><div class="opts" id="reloc"><button type="button">Yes</button><button type="button">No</button></div></div>
+  <div class="q"><p>Years of professional experience</p><div class="opts" id="exp"><button type="button">0-1 years</button><button type="button">1-3 years</button><button type="button">3-5 years</button><button type="button">5+ years</button></div></div>
+
+  <!-- A slider moved by keyboard. -->
+  <div class="q"><p id="py-l">Rate your proficiency in Python (0-10)</p>
+    <div id="py" role="slider" tabindex="0" aria-labelledby="py-l" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"></div></div>
+
+  <!-- A rating grid: the radios have no labels; the column headers name the options. -->
+  <h3>How comfortable are you with the following?</h3>
+  <table id="grid">
+    <thead><tr><th></th><th>Beginner</th><th>Basic</th><th>Intermediate</th><th>Advanced</th><th>Expert</th></tr></thead>
+    <tbody>
+      <tr><td>Python</td><td><input type="radio" name="g_py" value="1"></td><td><input type="radio" name="g_py" value="2"></td><td><input type="radio" name="g_py" value="3"></td><td><input type="radio" name="g_py" value="4"></td><td><input type="radio" name="g_py" value="5"></td></tr>
+      <tr><td>SQL</td><td><input type="radio" name="g_sql" value="1"></td><td><input type="radio" name="g_sql" value="2"></td><td><input type="radio" name="g_sql" value="3"></td><td><input type="radio" name="g_sql" value="4"></td><td><input type="radio" name="g_sql" value="5"></td></tr>
+    </tbody>
+  </table>
+
+  <!-- Not questions: row actions and a pager. -->
+  <div class="q"><div class="opts"><button type="button">Add another</button><button type="button">Remove</button></div></div>
+  <div class="pager"><button type="button">1</button><button type="button">2</button><button type="button">3</button></div>
+
+<script>
+  for (const g of document.querySelectorAll('.opts')) g.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    g.querySelectorAll('button').forEach((x) => x.classList.toggle('selected', x === b));
+  });
+  const py = document.getElementById('py');
+  py.addEventListener('keydown', (e) => {
+    let v = +py.getAttribute('aria-valuenow');
+    if (e.key === 'Home') v = 0; else if (e.key === 'End') v = 10; else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') v = Math.min(10, v + 1); else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') v = Math.max(0, v - 1); else return;
+    py.setAttribute('aria-valuenow', v); e.preventDefault();
+  });
+
+  // Run by run-all.mjs: checks what the scan understood, fills the new widget kinds, and reads them back.
+  window.selfTest = async () => {
+    const jf = window.__jobfill, fail = [];
+    const { fields } = await jf.scan();
+    const find = (re) => fields.find((f) => re.test(f.label));
+    const expect = (re, checks) => {
+      const f = find(re);
+      if (!f) return fail.push(`no field found for ${re}`);
+      for (const [k, v] of Object.entries(checks)) {
+        const got = f[k];
+        const ok = v instanceof RegExp ? v.test(got || '') : Array.isArray(v) ? JSON.stringify(got) === JSON.stringify(v) : got === v;
+        if (!ok) fail.push(`${re}: ${k} is ${JSON.stringify(got)}, wanted ${v}`);
+      }
+      return f;
+    };
+    const name = expect(/^full name$/i, { type: 'text' });
+    expect(/date of birth/i, { format: 'DD/MM/YYYY' });
+    expect(/current ctc/i, { help: /LPA/ });
+    expect(/mobile/i, { help: /country code/i });
+    expect(/why do you want/i, { maxWords: 50 });
+    const reloc = expect(/relocate/i, { type: 'radio', options: ['Yes', 'No'], required: true });
+    const exp = expect(/years of professional experience/i, { type: 'radio' });
+    const slider = expect(/proficiency in python/i, { type: 'number', min: '0', max: '10' });
+    const gpy = expect(/comfortable.*›\s*python/i, { type: 'radio', options: ['Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert'] });
+    const gsql = expect(/comfortable.*›\s*sql/i, { type: 'radio' });
+    if (fields.some((f) => (f.options || []).some((o) => /^(add another|remove)$/i.test(o)))) fail.push('row action buttons read as a question');
+    if (fields.some((f) => JSON.stringify(f.options) === '["1","2","3"]')) fail.push('the pager read as a question');
+
+    const values = {};
+    if (name) values[name.id] = 'Riya Sharma';
+    if (reloc) values[reloc.id] = 'Yes';
+    if (exp) values[exp.id] = '1-3 years';
+    if (slider) values[slider.id] = '7';
+    if (gpy) values[gpy.id] = 'Advanced';
+    if (gsql) values[gsql.id] = 'Intermediate';
+    const res = await jf.fill(values, []);
+    const sel = (id) => document.querySelector(`#${id} .selected`)?.textContent;
+    const got = {
+      name: document.getElementById('name').value, relocate: sel('reloc'), experience: sel('exp'), python: py.getAttribute('aria-valuenow'),
+      gridPython: document.querySelector('input[name=g_py]:checked')?.value, gridSql: document.querySelector('input[name=g_sql]:checked')?.value,
+    };
+    const want = { name: 'Riya Sharma', relocate: 'Yes', experience: '1-3 years', python: '7', gridPython: '4', gridSql: '3' };
+    for (const k of Object.keys(want)) if (got[k] !== want[k]) fail.push(`fill ${k}: got ${JSON.stringify(got[k])}, wanted ${want[k]}`);
+    return { fields: fields.length, fail, got, results: res?.results?.map?.((r) => `${r.label?.slice(0, 30)}: ${r.status}`) };
+  };
+</script>
+</body>
+</html>

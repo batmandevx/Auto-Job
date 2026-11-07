@@ -353,6 +353,7 @@
   // On or off, for native inputs, ARIA widgets, and plain buttons that only change their class or data-state when picked.
   const isChecked = (m) => m.checked ?? (['aria-checked', 'aria-pressed', 'aria-selected'].some((a) => m.getAttribute(a) === 'true') ||
     /^(on|checked|active|selected)$/i.test(m.dataset?.state || '') ||
+    (!!m.dataset?.jfChosen) ||
     (!!m.dataset?.jfPlain && /(^|[\s_-])(selected|active|is-?active|is-?selected|checked|chosen|pressed)($|[\s_-])/i.test(typeof m.className === 'string' ? m.className : '')));
 
   // ---------- scan ----------
@@ -615,18 +616,44 @@
 
     // Plain answer buttons ("Yes" "No", "0-1 yrs" "1-3 yrs"…) that only restyle themselves when picked.
     const ACTION_BTN = /^(add|remove|delete|upload|attach|browse|next|back|previous|continue|submit|apply|save|cancel|close|edit|clear|reset|done|ok|sign|log|skip|view|show|hide|more|less|\+|×|x)\b/i;
-    const plainParents = new Set(deepAll('button[type="button"], [role="button"]:not(button)').filter((b) => !seen.has(b) && !b.dataset.jfId && !b.hasAttribute('aria-pressed') && !b.hasAttribute('aria-haspopup') && !b.hasAttribute('aria-expanded')).map((b) => b.parentElement).filter(Boolean));
+    const plainButtons = deepAll('button[type="button"], [role="button"]:not(button)').filter(
+      (b) => !seen.has(b) && !b.dataset.jfId && !b.hasAttribute('aria-pressed') && !b.hasAttribute('aria-haspopup') && !b.hasAttribute('aria-expanded'),
+    );
+    const plainParents = new Set();
+    for (const b of plainButtons) {
+      let owner = b.parentElement;
+      for (let depth = 0; owner && depth < 4; depth++, owner = owner.parentElement) {
+        const descendants = [...owner.querySelectorAll('button[type="button"], [role="button"]:not(button)')].filter(shown);
+        if (descendants.length >= 2 && descendants.length <= 8 && descendants.every((x) => plainButtons.includes(x))) {
+          plainParents.add(owner);
+          break;
+        }
+      }
+    }
     for (const grp of plainParents) {
       if (grp.closest('[data-jf-ignore]') || siteChrome(grp) || grp.closest('[role="dialog"][aria-modal="true"] footer, [role="toolbar"], [role="tablist"], [role="menu"]')) continue;
-      const kids = [...grp.children].filter(shown);
-      const btns = kids.filter((b) => b.matches('button[type="button"], [role="button"]'));
-      if (btns.length < 2 || btns.length > 8 || btns.length !== kids.length) continue;
+      const btns = [...grp.querySelectorAll('button[type="button"], [role="button"]:not(button)')].filter((b) => shown(b) && plainButtons.includes(b));
+      if (btns.length < 2 || btns.length > 8) continue;
       const texts = btns.map((b) => clean(b.textContent));
       if (texts.some((t) => !t || t.length > 40 || ACTION_BTN.test(t)) || new Set(texts.map(norm)).size !== texts.length) continue;
       if (btns.some((b) => seen.has(b) || b.querySelector('input, select, textarea, svg:only-child'))) continue;
       // Only a question written right above them makes them a field (a pager or toolbar has none).
-      const question = questionAbove(grp);
+      let question = questionAbove(grp);
+      // Some React/Next opportunity forms put the prompt and its option buttons in
+      // one wrapper instead of a labelled fieldset. Recover that prompt without
+      // treating the whole page navigation as a field.
+      if (!question) {
+        let owner = grp.parentElement;
+        for (let i = 0; owner && i < 3 && !question; i++, owner = owner.parentElement) {
+          const optionText = new Set(btns.map((b) => clean(b.textContent)));
+          const text = clean(textOf(owner)).split(/\s+/).filter(Boolean).join(' ');
+          const prompt = [...optionText].reduce((t, option) => t.replace(option, ''), text).trim();
+          if (prompt.length >= 8 && prompt.length <= 300 && /\b(interest|availability|notice|timezone|time zone|overlap|rate|commitment|hours?|confirm|profile)\b/i.test(prompt)) question = prompt;
+        }
+      }
       if (!question) continue;
+      // Do not turn a repeated nested candidate into a second field.
+      if (btns.some((b) => b.dataset.jfPlain)) continue;
       btns.forEach((b) => { seen.add(b); b.dataset.jfPlain = '1'; });
       addChoice(fields, btns, 'radio');
       fields[fields.length - 1].label = question;
@@ -1099,7 +1126,9 @@
         if (i < 0) continue;
         if (members[i].dataset.jfPlain) {
           // No state the page shows us: click once (a second click could toggle it back off).
+          members.forEach((m) => delete m.dataset.jfChosen);
           if (!isChecked(members[i])) clickLikeUser(members[i]);
+          members[i].dataset.jfChosen = '1';
           await sleep(150);
           hit = true;
           chosen ||= members[i];
@@ -1831,7 +1860,7 @@
       .slice(0, 60);
 
   const SUBMIT_RE = /^(submit( application| my application| your application)?|send( application)?|apply|finish|complete( application)?|submit & finish|confirm and submit)$/i;
-  const NEXT_RE = /^(next( step| page)?|continue|verify( code| email| otp)?|confirm code|submit code|save (and|&) continue|save (and|&) next|proceed|review( application| your application)?|next:.*|continue to .*|→|>)$/i;
+  const NEXT_RE = /^(next( step| page)?|continue( to .*)?|verify( code| email| otp)?|confirm code|submit code|save (and|&) continue|save (and|&) next|proceed|review( application| your application)?|review and confirm|add your profile|confirm (availability|timezone|time zone|rate)|next:.*|continue to .*|→|>)$/i;
 
   function findSubmit() {
     const list = buttons();
@@ -1839,7 +1868,9 @@
   }
   function findNext() {
     const list = buttons().filter((b) => !/back|previous|cancel|save draft|save for later/i.test(btnText(b)) && !SUBMIT_RE.test(btnText(b)));
-    return list.find((b) => NEXT_RE.test(btnText(b))) || list.find((b) => b.matches('[data-automation-id="bottom-navigation-next-button"], [data-testid*="next" i]')) || null;
+    return list.find((b) => NEXT_RE.test(btnText(b))) ||
+      list.find((b) => /next|continue|proceed|review/i.test(`${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-testid') || ''}`) && !/submit|apply/i.test(btnText(b))) ||
+      list.find((b) => b.matches('[data-automation-id="bottom-navigation-next-button"], [data-testid*="next" i]')) || null;
   }
   const submitLabel = () => (findSubmit() ? btnText(findSubmit()) : null);
   const nextLabel = () => (findNext() ? btnText(findNext()) : null);

@@ -75,6 +75,29 @@ const cur = (p, k, fallback) => p.personal?.[k] || p.personal?.[fallback];
 const safeText = (t) => String(t || '').replace(/["“”]/g, "'").replace(/[<>[\]{}\\]/g, '');
 const noRelation = (a) => String(a || '').replace(/,?\s*\b[SDWC]\s*[./]\s*O\b\.?/gi, '').replace(/\s{2,}/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
 const digits = (s) => String(s || '').replace(/\D/g, '');
+const locationAliases = [
+  ['bangalore', 'bengaluru'],
+  ['delhi ncr', 'new delhi', 'delhi'],
+  ['pan india', 'pan- india', 'pan-india'],
+];
+const locationNorm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function locationOption(options, wanted, used = []) {
+  const target = locationNorm(wanted);
+  if (!target) return undefined;
+  const group = locationAliases.find((g) => g.includes(target)) || [target];
+  return options.find((o) => used.every((u) => locationNorm(o) !== locationNorm(u)) && group.some((a) => locationNorm(o) === a || locationNorm(o).startsWith(`${a} `)));
+}
+function cgpaValue(profile) {
+  const configured = profile.answers?.currentCGPA;
+  if (configured) return configured;
+  const raw = String(profile.education?.[0]?.gpa || '');
+  return (raw.match(/^\s*(\d+(?:\.\d+)?)/) || [])[1];
+}
+function cgpaScaleValue(profile) {
+  if (profile.answers?.cgpaScale) return profile.answers.cgpaScale;
+  const raw = String(profile.education?.[0]?.gpa || '');
+  return (raw.match(/\/\s*(\d+(?:\.\d+)?)/) || [])[1];
+}
 
 // Common fields are filled from the profile directly: instant, free and never hallucinated.
 // Order matters: more specific patterns first. Everything else goes to the model in one batch.
@@ -159,6 +182,28 @@ const RULES = [
   [{ test: (l) => LANG_LEVEL.test(l) }, (p, f) => (/language/i.test(`${f.section || ''} ${f.label}`) ? (nativeLang(spoken(p)[(f.entry || 1) - 1]) ? 'Native' : 'Fluent') : undefined)],
   [HEAR_LABEL, (p) => p.answers?.howDidYouHear || 'LinkedIn'],
   [/^(languages?\s*(known|spoken)?|spoken\s*languages?|languages you (speak|know))$/i, (p) => p.personal.languages],
+  [/are you interested|interested in (this|the) (opportunity|role|project)|would you like to proceed/i, () => 'Yes'],
+  [/enrolled in or.*completed.*bachelor|completed.*bachelor.*degree|have.*bachelor.*degree/i, (p) => (p.education || []).length ? 'Yes' : undefined],
+  [/computer science fundamentals|object[- ]oriented|operating systems|algorithms|data structures|complexity analysis/i, (p) => yesNo(p.answers.computerScienceFundamentals)],
+  [/active (arrears|backlogs?)|backlogs?|arrears?/i, (p) => yesNo(p.answers.activeBacklogs)],
+  [/current\s*cgpa|cumulative.*cgpa|cgpa.*cumulative/i, (p) => cgpaValue(p)],
+  [/cgpa\s*scale|cgpa.*out of|how much.*cgpa/i, (p) => cgpaScaleValue(p)],
+  [/first location preference|location preference.*first/i, (p) => p.answers.firstLocationPreference],
+  [/second location preference|location preference.*second/i, (p) => p.answers.secondLocationPreference],
+  [/third location preference|location preference.*third/i, (p) => p.answers.thirdLocationPreference],
+  [/availability|type of availability|time commitment|commitment required|hours?\s*(per|\/)\s*week|full[\s-]?time.*hours/i, (p) => p.answers.availability],
+  [/notice period|how soon can you join|when can you (start|join)|joining/i, (p, f) => (numericField(f) || /\bdays?\b/i.test(f.label) ? p.answers.noticeDays || '0' : p.answers.noticePeriod)],
+  [/confirm (your )?time\s*zone|timezone|time zone|local time zone/i, (p) => p.answers.timezone],
+  [/overlap.*pst|pst.*overlap|overlap.*(pacific|customer work)|work.*overlap/i, (p) => yesNo(p.answers.overlapPst)],
+  [/confirm (your )?rate|rate in usd|hourly rate|pay rate|billing rate/i, (p, f) => numericField(f) ? digits(p.answers.hourlyRate) : p.answers.hourlyRate],
+  [/employment type|engagement type|contract(or)? assignment|freelance|independent contractor/i, (p, f) => {
+    const opts = f.options || [];
+    return p.answers.employmentType || opts.find((o) => /contract|freelance/i.test(o)) || (opts.length ? undefined : 'Contractor');
+  }],
+  [/remote|work from home|work location|work arrangement|work mode/i, (p) => p.answers.workMode || 'Remote'],
+  [/eligible to work|legally authorized|right to work|work authorization|authorized to work/i, (p) => p.answers.workAuthorization],
+  [/country.*(eligible|available)|available.*country|location.*eligible/i, (p) => p.personal.country || p.answers.currentLocation],
+  [/commit.*(hours?|week)|hours?.*(per|\/)\s*week|minimum.*hours?/i, (p) => p.answers.availability],
   [/\bc?gpa\b|grade\s*point|cumulative\s*grade/i, (p) => p.education?.[0]?.gpa],
   [/^(gender|sex|gender identity)\b/i, (p) => p.personal.gender || p.answers.gender],
   [/pronouns?/i, (p) => p.personal.pronouns],
@@ -273,6 +318,27 @@ function ruleValue(field, profile, job) {
   if (CHOICE.includes(field.type) && field.options?.length) {
     if (asksPostgradOnly(field.label) && !hasPostgrad(profile)) return field.options.find((o) => NA_OPTION.test(String(o).trim()));
     const label = clean(String(field.label).split('›').pop());
+    if (/enrolled in or.*completed.*bachelor|completed.*bachelor.*degree|have.*bachelor.*degree/i.test(label)) {
+      return field.options.find((o) => /^yes\b/i.test(o)) || field.options.find((o) => /bachelor|enrolled|completed/i.test(o));
+    }
+    if (/computer science fundamentals|object[- ]oriented|operating systems|algorithms|data structures|complexity analysis/i.test(label)) {
+      const want = yesNo(profile.answers.computerScienceFundamentals);
+      return want && (field.options.find((o) => new RegExp(`^${want}\\b`, 'i').test(o)) || field.options.find((o) => normT(o) === normT(want)));
+    }
+    if (/active (arrears|backlogs?)|backlogs?|arrears?/i.test(label)) {
+      const want = yesNo(profile.answers.activeBacklogs);
+      return want && (field.options.find((o) => new RegExp(`^${want}\\b`, 'i').test(o)) || field.options.find((o) => normT(o) === normT(want)));
+    }
+    if (/cgpa\s*scale|cgpa.*out of|how much.*cgpa/i.test(label)) {
+      const want = cgpaScaleValue(profile);
+      return want && (field.options.find((o) => normT(o) === normT(want)) || field.options.find((o) => new RegExp(`\\b${String(want).replace('.', '\\.')}\\b`).test(o)));
+    }
+    const locMatch = label.match(/\b(first|second|third)\s+location preference\b/i);
+    if (locMatch) {
+      const key = `${locMatch[1].toLowerCase()}LocationPreference`;
+      const used = ['first', 'second', 'third'].slice(0, ['first', 'second', 'third'].indexOf(locMatch[1].toLowerCase())).map((x) => profile.answers?.[`${x}LocationPreference`]).filter(Boolean);
+      return locationOption(field.options, profile.answers?.[key], used);
+    }
     if (/licen[cs]es?\s*(or|and|\/)\s*certifications?|any (professional )?certifications?/i.test(label)) {
       const want = (profile.certifications || []).length ? /^yes\b/i : /^no\b/i;
       const hit = field.options.find((o) => want.test(String(o).trim()));
@@ -313,7 +379,7 @@ function ruleValue(field, profile, job) {
     if (v === undefined || v === '') return undefined; // unknown: let the model / human handle it
     // "(MM/YYYY)", "MM-YYYY", "YYYY-MM" in the question: dates in exactly that shape.
     if (/graduat|complet|date|month and year|when/i.test(label)) v = toHintFormat(v, `${field.placeholder || ''} ${label}`);
-    if (field.type === 'number' && !/^\d+$/.test(String(v).trim())) return undefined; // e.g. "₹12–18 LPA" into a number box: let the model convert
+    if (field.type === 'number' && !(/^\d+$/.test(String(v).trim()) || (/cgpa|gpa|grade|score|rating/i.test(label) && /^\d+(?:\.\d+)?$/.test(String(v).trim())))) return undefined; // salary ranges stay with the model; academic scores may be decimal
     if (/birth|dob/i.test(label) && field.type !== 'date') v = formatDate(v, `${field.placeholder} ${label}`);
     if (field.type === 'tel' && field.maxLength && field.maxLength <= 10) v = digits(v).slice(-field.maxLength);
     if (/phone|mobile/i.test(label) && /without|10.digit|exclud.*code/i.test(label)) v = digits(v).slice(-10);

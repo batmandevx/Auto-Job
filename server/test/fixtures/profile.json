@@ -101,7 +101,11 @@
     "currentLocation": "Pune, Maharashtra, India",
     "yearsOfExperience": "3",
     "currentlyEmployed": "Yes",
-    "isFresher": "No"
+    "isFresher": "No",
+    "availability": "Ready to Interview, Full Time (8 hrs/day, 40 hrs/week)",
+    "timezone": "Asia/Kolkata",
+    "overlapPst": "Yes",
+    "hourlyRate": "15"
   },
   "sourceFiles": [],
   "sourceText": ""

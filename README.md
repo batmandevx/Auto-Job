@@ -389,6 +389,12 @@ Open the panel → **Profile** → **Choose resume files** → pick one or more 
 
 Open any job posting, press **Do it all on this page**, review the orange fields, and press **I've checked everything: Submit** twice.
 
+The Profile tab also includes availability, timezone, PST-overlap, and hourly-rate answers for opportunity platforms that use custom button steps instead of standard ATS fields. Leave any of these blank when you want Auto Job to stop and ask you to decide.
+
+Auto Job also recognizes nested React/Next option cards, custom button groups, ARIA controls, and navigation labels such as **Add your profile**, **Review and confirm**, and **Continue to review**. It uses the same profile rules and review highlighting as standard ATS fields rather than relying on a site-specific integration.
+
+For employer portals such as Amazon Jobs, Profile answers can also provide education eligibility, computer-science fundamentals, location preferences, CGPA scale/current CGPA, and active-backlog status. Location preferences are matched against aliases such as **Bangalore/Bengaluru** and are kept distinct across first, second, and third choices.
+
 > **Optional:** connect Gmail for one-time codes. Create an App Password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (needs 2-Step Verification), then set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in `server/.env` and restart. The panel header shows **gmail ✓**.
 
 ## Using every feature

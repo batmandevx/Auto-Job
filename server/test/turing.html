@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Turing-style opportunity</title>
+<style>.step[hidden]{display:none}.options{display:flex;gap:8px}.options button{padding:8px}</style>
+</head>
+<body>
+  <main id="step1" class="step">
+    <h1>Apply to this opportunity</h1>
+    <section>
+      <p>Are you interested in this opportunity?</p>
+      <div class="options">
+        <span><button type="button">Yes</button></span><span><button type="button">No</button></span>
+      </div>
+    </section>
+    <button type="button" id="next1">Continue</button>
+  </main>
+  <main id="step2" class="step" hidden>
+    <h2>Add your profile</h2>
+    <section>
+      <p>Type of Availability</p>
+      <div class="options">
+        <button type="button">Ready to Interview, Full Time (8 hrs/day, 40 hrs/week)</button>
+        <button type="button">Part Time</button>
+      </div>
+    </section>
+    <label>Notice Period <input name="noticePeriod"></label>
+    <section>
+      <p>Confirm your timezone</p>
+      <select aria-label="Confirm your timezone"><option value="">Select</option><option>Asia/Kolkata</option><option>America/Los_Angeles</option></select>
+    </section>
+    <section>
+      <p>Can you overlap at least 4 hours with the PST time zone?</p>
+      <div class="options"><span><button type="button">Yes</button></span><span><button type="button">No</button></span></div>
+    </section>
+    <label>Rate in USD: <input name="hourlyRate" type="number"></label>
+    <button type="button" id="next2">Continue to review</button>
+  </main>
+  <main id="step3" class="step" hidden>
+    <h2>Confirmation</h2>
+    <p>Please answer all relevant questions.</p>
+    <button type="submit">Submit application</button>
+  </main>
+  <script>
+    const show = (n) => document.querySelectorAll('.step').forEach((s, i) => { s.hidden = i !== n; });
+    next1.onclick = () => show(1);
+    next2.onclick = () => show(2);
+  </script>
+</body>
+</html>

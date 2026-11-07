@@ -921,9 +921,28 @@
   }
   const optionTexts = (opts) => opts.map((o) => clean(o.getAttribute('aria-label') || o.textContent));
   // Long lists render lazily: scroll the list to reveal more options.
+  // The element that actually scrolls: the list itself, a box inside it (virtual lists: Ant Design, react-window),
+  // or the nearest scrolling ancestor of its options.
+  const scrolls = (n) => n && n.scrollHeight > n.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(n).overflowY);
+  function listScroller(el) {
+    const roots = [...deepAll('[role="listbox"]').filter(shown), openedList.get(el)].filter((n) => n?.isConnected);
+    for (const r of roots) {
+      if (scrolls(r)) return r;
+      const inner = [...r.querySelectorAll('*')].find(scrolls);
+      if (inner) return inner;
+    }
+    for (let n = optionNodes(el)[0]?.parentElement, k = 0; n && k < 6; n = n.parentElement, k++) if (scrolls(n)) return n;
+    return null;
+  }
   async function scrollForOption(el, value) {
-    const list = deepAll('[role="listbox"]').find(shown);
+    const list = listScroller(el);
     if (!list) return -1;
+    // Start from the top: a list left open by an earlier try may still be scrolled to its end.
+    if (list.scrollTop > 0) {
+      list.scrollTop = 0;
+      list.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await sleep(150);
+    }
     for (let k = 0; k < 25; k++) {
       const opts = optionNodes(el);
       const i = bestMatch(optionTexts(opts), value);
@@ -1014,7 +1033,7 @@
     }
 
     // 2) A search box inside the opened dropdown, or the field itself if it's an input.
-    const search = popupSearch(el) || (el.tagName === 'INPUT' ? el : null);
+    const search = popupSearch(el) || (el.tagName === 'INPUT' && !el.readOnly ? el : null); // read-only boxes only open the list
     if (search) {
       if (search !== el || !typeFirst) {
         await typeInto(search, v);
@@ -1052,7 +1071,8 @@
       press(el, 'ArrowDown');
       press(el, 'Enter');
       await sleep(250);
-      if (sameValue(readValue(el), v)) return 'filled';
+      const now = readValue(el);
+      if (sameValue(now, v) && optionTexts(opts).some((t) => sameValue(now, t))) return 'filled';
     }
     close(el);
     if (opts.length) return `no option matches "${v}": pick it yourself`;
@@ -1296,6 +1316,9 @@
       // A box that only decorates a real control (e.g. wraps a <select>) isn't a separate field.
       if (el.querySelector('select')) continue;
       if (out.some((o) => o.contains(el) || el.contains(o))) continue;
+      let owner = el.parentElement;
+      for (let k = 0; owner && k < 3 && !owner.querySelector('[data-jf-id]'); k++) owner = owner.parentElement;
+      if (owner?.querySelector('[data-jf-id]') && [...owner.querySelectorAll('[data-jf-id]')].some((c) => comboKind(c) && owner.contains(c) && c.getBoundingClientRect().top - el.getBoundingClientRect().top < 40)) continue;
       out.push(el);
     }
     return out;
@@ -1453,6 +1476,53 @@
       added++;
     }
     return added;
+  }
+
+  // ---------- reveal the whole form ----------
+  // Before reading a page: scroll through it (and through scrolling boxes inside it) so sections that render on
+  // scroll appear, and open collapsed sections ("Show additional questions", closed <details>) that hold questions.
+  // Menus, dropdowns and the site's own navigation are never touched.
+  const SECTION_TOGGLE = /additional|more (details|info|information|questions)|optional|show (more|all|additional)|expand|questions|details|information|education|experience|employment|preferences|eligibility|diversity|voluntary|disclosures?|links?|documents?|profile/i;
+  async function revealAll() {
+    const startY = scrollY;
+    let expanded = 0;
+    const sweep = async (scrollBy, height, max) => {
+      for (let y = 0, k = 0; y < max() && k < 40; y += height * 0.8, k++) {
+        scrollBy(y);
+        await sleep(110);
+      }
+      scrollBy(max()); // always end at the very bottom, where lazy sections usually wait
+      await sleep(250);
+    };
+    await sweep((y) => scrollTo(0, y), innerHeight || 800, () => document.documentElement.scrollHeight - innerHeight);
+    const boxes = deepAll('form, main, section, div').filter((b) => b.scrollHeight > b.clientHeight + 80 && /auto|scroll/.test(getComputedStyle(b).overflowY) && b.querySelector(CONTROL) && shown(b)).slice(0, 4);
+    for (const b of boxes) {
+      await sweep((y) => (b.scrollTop = y), b.clientHeight || 400, () => b.scrollHeight - b.clientHeight);
+      b.scrollTop = 0;
+    }
+    for (let round = 0; round < 2; round++) {
+      for (const b of deepAll('[aria-expanded="false"]')) {
+        if (!shown(b) || siteChrome(b) || b.matches('[role="combobox"], [aria-haspopup], select, input, [role="menuitem"], [role="tab"]') || b.closest('[role="menu"], [role="listbox"], [data-jf-ignore]')) continue;
+        const id = b.getAttribute('aria-controls');
+        const region = id && byIdIn(b, id);
+        const text = clean(`${btnText(b)} ${b.getAttribute('aria-label') || ''}`);
+        if (!region && !SECTION_TOGGLE.test(text)) continue;
+        if (region && region.querySelector(CONTROL) && shown(region)) continue; // already open
+        if (/^(delete|remove|cancel|close|sign|log|menu|filter|sort|share|save)\b/i.test(text)) continue;
+        click(b);
+        expanded++;
+        await sleep(180);
+      }
+      for (const d of deepAll('details:not([open])')) {
+        if (siteChrome(d) || d.closest('[data-jf-ignore]')) continue;
+        if (!d.querySelector(CONTROL) && !SECTION_TOGGLE.test(clean(d.querySelector('summary')?.textContent))) continue;
+        d.open = true;
+        expanded++;
+      }
+    }
+    scrollTo(0, startY);
+    await waitStable(300, 2500);
+    return { expanded };
   }
 
   // ---------- check before continuing ----------
@@ -2134,6 +2204,7 @@
     addEntry,
     auditPage,
     deleteEntry,
+    revealAll,
     sectionEntries,
     addLinkRows,
     lostValues,

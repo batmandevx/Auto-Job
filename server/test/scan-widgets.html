@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Widgets – Greenhouse / MUI / lazy sections test</title>
+  <style>
+    body { font: 15px system-ui; max-width: 680px; margin: 24px auto; padding: 0 16px; }
+    label, legend, .lbl { display: block; margin-top: 14px; font-weight: 600; }
+    input:not([type=checkbox]):not([type=radio]) { padding: 8px; width: 100%; box-sizing: border-box; }
+    .select__control { border: 1px solid #999; border-radius: 4px; padding: 4px 8px; display: flex; gap: 6px; cursor: text; }
+    .select__control input { border: 0; outline: 0; flex: 1; padding: 4px 0 !important; }
+    .select__placeholder { color: #888; } .select__menu, .mui-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 10; max-height: 220px; overflow: auto; }
+    .select__option, .mui-menu li { padding: 6px 10px; cursor: pointer; list-style: none; } .mui-menu { margin: 0; padding: 0; }
+    .MuiSelect { border: 1px solid #999; padding: 8px; min-height: 20px; cursor: pointer; }
+    [role=switch] { width: 40px; height: 22px; border-radius: 11px; background: #ccc; display: inline-block; vertical-align: middle; }
+    [role=switch][aria-checked=true] { background: #16a34a; }
+    .spacer { height: 1600px; }
+  </style>
+</head>
+<body>
+  <h2>Apply</h2>
+  <form id="app" onsubmit="return false">
+    <!-- Greenhouse (react-select): type to search, options load a moment later in a menu at the end of <body>. -->
+    <label id="cty-l" for="cty">Country *</label>
+    <div class="select__container" id="ctyBox"><div class="select__control"><div class="select__placeholder">Select...</div><div class="select__single-value"></div>
+      <input id="cty" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-labelledby="cty-l" aria-required="true" autocomplete="off" /></div></div>
+    <input type="hidden" name="country" id="ctyVal" />
+
+    <!-- MUI Select: a div that opens its list on mousedown (a plain click does nothing), list in a portal. -->
+    <div class="lbl" id="deg-l">Highest degree</div>
+    <div id="deg" class="MuiSelect" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="deg-l" tabindex="0">&#8203;</div>
+    <input type="hidden" name="degree" id="degVal" />
+
+    <!-- Ant Design-style select: read-only, 60 options, only the ~10 in view exist in the page (virtual list). -->
+    <label id="dep-l" for="dep">Preferred team</label>
+    <div class="ant-select" id="depBox" style="border:1px solid #999;padding:6px;cursor:pointer"><span class="ant-select-selection-item" id="depShown">Please select</span>
+      <input id="dep" role="combobox" readonly aria-haspopup="listbox" aria-expanded="false" aria-labelledby="dep-l" style="position:absolute;opacity:0;width:1px" /></div>
+    <input type="hidden" id="depVal" />
+
+    <fieldset style="border:0;padding:0"><legend>Which languages do you use? (select all that apply)</legend>
+      <label style="font-weight:400"><input type="checkbox" name="lang" value="Python" /> Python</label>
+      <label style="font-weight:400"><input type="checkbox" name="lang" value="Java" /> Java</label>
+      <label style="font-weight:400"><input type="checkbox" name="lang" value="Go" /> Go</label>
+      <label style="font-weight:400"><input type="checkbox" name="lang" value="Other" id="langOther" /> Other</label>
+      <div id="otherBox"></div>
+    </fieldset>
+
+    <label for="start">Earliest start date</label><input id="start" type="date" />
+    <div class="lbl" id="rel-l">Open to relocation</div><div id="rel" role="switch" aria-checked="false" aria-labelledby="rel-l" tabindex="0"></div>
+
+    <!-- A collapsed section whose fields only exist once it's opened. -->
+    <h3>Additional information</h3>
+    <button type="button" id="moreBtn" aria-expanded="false" aria-controls="more">Show additional questions</button>
+    <div id="more" hidden></div>
+
+    <details><summary>Optional questions</summary><label for="gh">GitHub profile</label><input id="gh" /></details>
+
+    <div class="spacer"></div>
+    <!-- Rendered only when scrolled into view. -->
+    <div id="lazy" style="min-height:120px">Loading…</div>
+  </form>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  // ---- react-select ----
+  const COUNTRIES = ['Indiana', 'India', 'British Indian Ocean Territory', 'Indonesia', 'Ireland', 'United States', 'United Kingdom'];
+  let menu = null;
+  const closeMenu = () => { menu?.remove(); menu = null; $('#cty').setAttribute('aria-expanded', 'false'); };
+  const openMenu = () => {
+    closeMenu();
+    menu = document.createElement('div'); menu.className = 'select__menu'; menu.setAttribute('role', 'listbox');
+    const r = $('#ctyBox').getBoundingClientRect(); Object.assign(menu.style, { left: r.left + scrollX + 'px', top: r.bottom + scrollY + 'px', width: r.width + 'px' });
+    menu.innerHTML = '<div class="select__menu-notice">Loading...</div>';
+    document.body.appendChild(menu); $('#cty').setAttribute('aria-expanded', 'true');
+    const q = $('#cty').value.toLowerCase(), mine = menu;
+    setTimeout(() => {
+      if (menu !== mine) return;
+      const hits = COUNTRIES.filter((c) => c.toLowerCase().includes(q));
+      menu.innerHTML = hits.length ? hits.map((c, i) => `<div class="select__option" role="option" id="cty-opt-${i}">${c}</div>`).join('') : '<div class="select__menu-notice">No options</div>';
+    }, 350);
+  };
+  $('#ctyBox').addEventListener('mousedown', () => setTimeout(openMenu, 0));
+  $('#cty').addEventListener('input', openMenu);
+  document.addEventListener('click', (e) => {
+    const o = e.target.closest('.select__option');
+    if (o) { $('.select__single-value').textContent = o.textContent; $('.select__placeholder').hidden = true; $('#ctyVal').value = o.textContent; $('#cty').value = ''; closeMenu(); }
+  });
+  $('#cty').addEventListener('blur', () => setTimeout(closeMenu, 150));
+
+  // ---- MUI select ----
+  const DEGREES = ["High School", "Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+  let mui = null;
+  $('#deg').addEventListener('mousedown', (e) => {
+    if (mui) return;
+    e.preventDefault();
+    mui = document.createElement('ul'); mui.className = 'mui-menu'; mui.setAttribute('role', 'listbox');
+    const r = $('#deg').getBoundingClientRect(); Object.assign(mui.style, { left: r.left + scrollX + 'px', top: r.bottom + scrollY + 'px', width: r.width + 'px' });
+    mui.innerHTML = DEGREES.map((d) => `<li role="option" data-value="${d}">${d}</li>`).join('');
+    document.body.appendChild(mui); $('#deg').setAttribute('aria-expanded', 'true');
+    mui.addEventListener('click', (ev) => {
+      const li = ev.target.closest('li'); if (!li) return;
+      $('#deg').textContent = li.dataset.value; $('#degVal').value = li.dataset.value; mui.remove(); mui = null; $('#deg').setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  // ---- Ant virtual list ----
+  const TEAMS = Array.from({ length: 60 }, (_, i) => (i === 47 ? 'Machine Learning Platform' : `Team ${String(i + 1).padStart(2, '0')}`));
+  let ant = null;
+  const ROW = 30, SHOW = 8;
+  const drawAnt = () => {
+    const holder = ant.querySelector('.rc-virtual-list-holder'), inner = ant.querySelector('.rc-virtual-list-holder-inner');
+    const first = Math.floor(holder.scrollTop / ROW);
+    inner.style.transform = `translateY(${first * ROW}px)`;
+    inner.innerHTML = TEAMS.slice(first, first + SHOW + 2).map((t) => `<div class="ant-select-item ant-select-item-option" role="option" title="${t}" style="height:${ROW}px;line-height:${ROW}px;padding:0 8px">${t}</div>`).join('');
+  };
+  $('#depBox').addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    if (ant) return;
+    ant = document.createElement('div'); ant.className = 'ant-select-dropdown';
+    const r = $('#depBox').getBoundingClientRect();
+    Object.assign(ant.style, { position: 'absolute', left: r.left + scrollX + 'px', top: r.bottom + scrollY + 'px', width: r.width + 'px', background: '#fff', border: '1px solid #ccc', zIndex: 10 });
+    ant.innerHTML = `<div role="listbox" class="rc-virtual-list"><div class="rc-virtual-list-holder" style="height:${ROW * SHOW}px;overflow-y:auto"><div style="height:${ROW * TEAMS.length}px;position:relative"><div class="rc-virtual-list-holder-inner" style="position:absolute;left:0;right:0;top:0"></div></div></div></div>`;
+    document.body.appendChild(ant); $('#dep').setAttribute('aria-expanded', 'true');
+    ant.querySelector('.rc-virtual-list-holder').addEventListener('scroll', drawAnt);
+    drawAnt();
+    ant.addEventListener('click', (ev) => {
+      const o = ev.target.closest('.ant-select-item-option'); if (!o) return;
+      $('#depShown').textContent = o.title; $('#depVal').value = o.title; ant.remove(); ant = null; $('#dep').setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  // ---- "Other" reveals a text box ----
+  $('#langOther').addEventListener('change', (e) => { $('#otherBox').innerHTML = e.target.checked ? '<label for="langOtherTxt">Please specify</label><input id="langOtherTxt" />' : ''; });
+  // ---- switch ----
+  $('#rel').addEventListener('click', () => $('#rel').setAttribute('aria-checked', String($('#rel').getAttribute('aria-checked') !== 'true')));
+  // ---- collapsed section ----
+  $('#moreBtn').addEventListener('click', () => {
+    const open = $('#moreBtn').getAttribute('aria-expanded') !== 'true';
+    $('#moreBtn').setAttribute('aria-expanded', String(open)); $('#more').hidden = !open;
+    if (open && !$('#notice')) $('#more').innerHTML = '<label for="notice">Notice period (days)</label><input id="notice" type="number" /><label for="heard">How did you hear about us?</label><select id="heard"><option value="">Select</option><option>LinkedIn</option><option>Referral</option><option>Company website</option></select>';
+  });
+  // ---- lazy section ----
+  new IntersectionObserver((es, ob) => { if (es.some((e) => e.isIntersecting)) { ob.disconnect(); setTimeout(() => ($('#lazy').innerHTML = '<label for="pf">Portfolio URL</label><input id="pf" />'), 200); } }).observe($('#lazy'));
+
+  window.selfTest = async () => {
+    const jf = window.__jobfill, fail = [];
+    const rev = await jf.revealAll();
+    const { fields } = await jf.scan();
+    const find = (re) => fields.find((f) => re.test(f.label));
+    const want = {
+      country: [/country/i, 'India'], degree: [/highest degree/i, "Bachelor's Degree"], langs: [/languages do you use/i, ['Python', 'Go']],
+      start: [/earliest start/i, '2027-01-04'], reloc: [/relocation/i, true], notice: [/notice period/i, '30'], heard: [/how did you hear/i, 'LinkedIn'],
+      github: [/github/i, 'https://github.com/riya-sample'], team: [/preferred team/i, 'Machine Learning Platform'], portfolio: [/portfolio/i, 'https://riya-sample.dev'],
+    };
+    const values = {};
+    for (const [k, [re, v]] of Object.entries(want)) {
+      const f = find(re);
+      if (!f) fail.push(`${k}: not found`);
+      else values[f.id] = v;
+    }
+    // An option that isn't in the list must never be reported as filled.
+    const teamField = find(/preferred team/i);
+    if (teamField) {
+      const r = await jf.fill({ [teamField.id]: 'Quantum Computing Guild' }, []);
+      if (r[teamField.id] === 'filled') fail.push('a missing option was reported as filled');
+      if ($('#depVal').value) fail.push('a missing option changed the answer');
+    }
+    const res = await jf.fill(values, []);
+    await new Promise((r) => setTimeout(r, 300));
+    const got = {
+      country: $('#ctyVal').value, degree: $('#degVal').value, langs: [...document.querySelectorAll('input[name=lang]:checked')].map((i) => i.value).join(','),
+      start: $('#start').value, reloc: $('#rel').getAttribute('aria-checked'), notice: $('#notice')?.value, heard: $('#heard')?.value,
+      github: $('#gh').value, portfolio: $('#pf')?.value, team: $('#depVal').value,
+    };
+    const expect = { country: 'India', degree: "Bachelor's Degree", langs: 'Python,Go', start: '2027-01-04', reloc: 'true', notice: '30', heard: 'LinkedIn', github: 'https://github.com/riya-sample', portfolio: 'https://riya-sample.dev', team: 'Machine Learning Platform' };
+    for (const k of Object.keys(expect)) if (got[k] !== expect[k]) fail.push(`${k}: got ${JSON.stringify(got[k])}, wanted ${expect[k]}`);
+    return { fields: fields.length, fail, got: { ...got, expanded: rev?.expanded, results: res } };
+  };
+</script>
+</body>
+</html>

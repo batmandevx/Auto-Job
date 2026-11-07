@@ -214,7 +214,7 @@
     <section id="tab-hacks" class="tab">
       <div class="card hero">
         <div class="row between" style="margin:0">
-          <div><h3 class="card-title" style="margin:0">Hackathons</h3><div class="hint" style="margin:2px 0 0" id="hackSummary">Devpost · Unstop · Devfolio · HackerEarth · Hack2skill · lablab.ai · Taikai · HackIndia</div></div>
+          <div><h3 class="card-title" style="margin:0">Hackathons</h3><div class="hint" style="margin:2px 0 0" id="hackSummary">Devpost · Unstop · Devfolio · HackerEarth · Hack2skill · lablab.ai · Taikai · HackIndia · MLH · ETHGlobal</div></div>
           <button id="refreshHacks" class="btn primary sm">↻ Refresh</button>
         </div>
         <div class="platforms" id="hackPlatforms"></div>
@@ -229,6 +229,7 @@
             <button data-m="all" class="on">All</button><button data-m="online">Online</button><button data-m="in-person">In person</button><button data-m="hybrid">Hybrid</button>
           </div>
           <select id="hackSort" class="select">
+            <option value="match" selected>Best for you</option>
             <option value="deadline">Closing soon</option>
             <option value="prize">Biggest prize</option>
             <option value="popular">Most popular</option>
@@ -237,6 +238,8 @@
         <div class="row" style="margin:4px 0">
           <label class="switch"><input type="checkbox" id="hackSaved" /><span class="track"></span>Saved only</label>
           <label class="switch"><input type="checkbox" id="hackIndia" /><span class="track"></span>India / online</label>
+          <label class="switch"><input type="checkbox" id="hackWeek" /><span class="track"></span>Closes this week</label>
+          <select id="hackTheme" class="select" title="What it's about"><option value="">All themes</option></select>
           <label class="switch" title="Only hackathons whose rewards include a pre-placement interview (PPI), a pre-placement offer (PPO), an internship or a hiring track"><input type="checkbox" id="hackPPO" /><span class="track"></span>🎯 PPI / PPO</label>
         </div>
         <div id="hackList" class="hacklist"><div class="empty"><span class="big">🏆</span>Press Refresh to load hackathons.</div></div>

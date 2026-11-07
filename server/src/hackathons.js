@@ -1,4 +1,4 @@
-// Hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia,
+// Hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH and ETHGlobal,
 // normalised to one shape. Public listing endpoints / pages only; results are cached for 30 minutes.
 
 import fs from 'node:fs';
@@ -54,7 +54,12 @@ function prizeUSD(text) {
 
 const SOURCES = {
   async devpost() {
-    const pages = await Promise.all([1, 2, 3, 4, 5, 6].map((p) => get(`https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&order_by=deadline&page=${p}`).catch(() => ({ hackathons: [] }))));
+    // Every open / upcoming page (9 per page), a few at a time.
+    const url = (p) => `https://devpost.com/api/hackathons?status[]=upcoming&status[]=open&order_by=deadline&page=${p}`;
+    const first = await get(url(1));
+    const last = Math.min(30, Math.ceil((first.meta?.total_count || 0) / (first.meta?.per_page || 9)) || 1);
+    const pages = [first];
+    for (let p = 2; p <= last; p += 6) pages.push(...(await Promise.all(Array.from({ length: Math.min(6, last - p + 1) }, (_, k) => get(url(p + k)).catch(() => ({ hackathons: [] }))))));
     return pages.flatMap((p) => p.hackathons || []).map((h) => {
       const prize = stripTags(h.prize_amount);
       const { start, end } = devpostDates(h.submission_period_dates);
@@ -79,7 +84,13 @@ const SOURCES = {
   },
 
   async unstop() {
-    const pages = await Promise.all([1, 2, 3].map((p) => get(`https://unstop.com/api/public/opportunity/search-result?opportunity=hackathons&page=${p}&per_page=30&oppstatus=open`).catch(() => null)));
+    // Pages until one comes back empty (30 per page, at most 10 pages).
+    const pages = [];
+    for (let p = 1; p <= 10; p += 5) {
+      const batch = await Promise.all([p, p + 1, p + 2, p + 3, p + 4].map((n) => get(`https://unstop.com/api/public/opportunity/search-result?opportunity=hackathons&page=${n}&per_page=30&oppstatus=open`).catch(() => null)));
+      pages.push(...batch);
+      if (batch.some((b) => !(b?.data?.data || []).length)) break;
+    }
     return pages.flatMap((p) => p?.data?.data || []).map((h) => {
       const cash = (h.prizes || []).reduce((s, p) => s + (Number(p.cash) || 0), 0);
       const prizeText = (h.prizes || []).map((p) => p.others || '').join(' | ');
@@ -251,6 +262,54 @@ const SOURCES = {
     }
     return out;
   },
+
+  // Major League Hacking: the season's events, marked up with schema.org Event data (url, dates, place, attendance).
+  async mlh() {
+    const year = new Date().getMonth() >= 6 ? new Date().getFullYear() + 1 : new Date().getFullYear();
+    const html = await get(`https://mlh.io/seasons/${year}/events`, { text: true });
+    const meta = (b, k) => b.match(new RegExp(`itemProp="${k}" content="([^"]*)"`, 'i'))?.[1] || '';
+    return html.split('itemType="https://schema.org/Event"').slice(1).map((b) => {
+      const name = stripTags(b.match(/<h4[^>]*>([\s\S]*?)<\/h4>/i)?.[1] || b.match(/alt="([^"]+?) (?:logo|background)"/i)?.[1] || '');
+      const attendance = meta(b, 'eventAttendanceMode');
+      const place = stripTags(b.match(/itemProp="location"[\s\S]*?itemProp="name">([\s\S]*?)<\/span>/i)?.[1] || '');
+      const start = iso(meta(b, 'startDate')), end = iso(meta(b, 'endDate'));
+      const url = meta(b, 'url');
+      return {
+        title: name,
+        url,
+        organizer: 'MLH',
+        mode: /Online/i.test(attendance) ? 'online' : /Mixed/i.test(attendance) ? 'hybrid' : 'in-person',
+        location: /everywhere|worldwide/i.test(place) ? '' : place,
+        start,
+        end,
+        deadline: start, // MLH events take sign-ups until they start
+        status: 'upcoming',
+        prize: '',
+        prizeUSD: 0,
+        tags: [...b.matchAll(/title="([A-Za-z][\w &/-]{1,24})"/g)].map((m) => m[1]).filter((t) => !/^(digital|in-person|hybrid)$/i.test(t)).slice(0, 4),
+        image: b.match(/<img src="([^"]+)"/)?.[1] || '',
+      };
+    }).filter((h) => h.title && h.url && (!h.end || new Date(h.end) > Date.now()));
+  },
+
+  // ETHGlobal: its hackathons (online and in cities), not the meetups, cafés and happy hours on the same page.
+  async ethglobal() {
+    const html = await get('https://ethglobal.com/events', { text: true });
+    const out = [];
+    for (const m of html.matchAll(/href="\/events\/([a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      const [, slug, body] = m;
+      if (/happy-hour|cafe|cowork|activation|anniversary|conf|meetup|-wtf|aggregation|summit|pragma|day$/i.test(slug)) continue;
+      const title = stripTags(body.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1] || '');
+      const times = [...body.matchAll(/<time[^>]*>([\s\S]*?)<\/time>/gi)].map((t) => stripTags(t[1]).replace(/(\d)(st|nd|rd|th)/, '$1'));
+      if (!title || times.length < 2) continue;
+      const year = times[1].match(/\d{4}/)?.[0];
+      const start = iso(/\d{4}/.test(times[0]) ? times[0] : `${times[0]}, ${year}`), end = iso(`${times[1]} 23:59`);
+      if (!end || new Date(end) < Date.now()) continue;
+      const where = stripTags(body.match(/<div[^>]*>(Online|[A-Z][\w .'-]{2,30})<\/div>\s*<svg/)?.[1] || '');
+      out.push({ title, url: `https://ethglobal.com/events/${slug}`, organizer: 'ETHGlobal', mode: /online/i.test(where) ? 'online' : 'in-person', location: /online/i.test(where) ? '' : where, start, end, deadline: start, status: 'upcoming', prize: '', prizeUSD: 0, tags: ['Web3', 'Ethereum'], image: body.match(/<img src="([^"]+)"/)?.[1] || '' });
+    }
+    return out.filter((h, i, a) => a.findIndex((x) => x.url === h.url) === i);
+  },
 };
 
 export const PLATFORMS = Object.keys(SOURCES);
@@ -285,6 +344,23 @@ export function careerPerks(text, flags = {}) {
   return perks;
 }
 
+// What a hackathon is about, from its title, tags and rewards: for filtering and for matching your skills.
+const THEMES = [
+  ['AI / ML', /\b(ai|a\.i\.|ml|machine learning|deep learning|llm|genai|generative|gpt|agents?|agentic|nlp|computer vision|data science|rag)\b/i],
+  ['Web3', /web3|blockchain|crypto|ethereum|solana|defi|nft|dao|smart contract|polygon|bitcoin|\beth\b/i],
+  ['FinTech', /fintech|finance|banking|payments?|trading|insurance|upi/i],
+  ['Health', /health|medical|medtech|biotech|wellness|mental|healthcare/i],
+  ['Climate', /climate|sustainab|green|energy|environment|carbon|agri|agriculture/i],
+  ['Education', /education|edtech|e-?learning|\bschools?\b|teach(ers?|ing)|classroom/i],
+  ['Security', /security|cyber|ctf|privacy|hacking/i],
+  ['Cloud / DevOps', /cloud|devops|kubernetes|aws|azure|gcp|serverless|infra/i],
+  ['Mobile / Web', /\b(web|mobile|android|ios|flutter|react|frontend|full[\s-]?stack|app)\b/i],
+  ['Hardware / IoT', /hardware|iot|robotics|embedded|arduino|drone|space/i],
+  ['Social good', /social|impact|community|ngo|accessibility|inclusion|civic|government|smart city/i],
+  ['Gaming', /gaming|game|esports|metaverse|ar\b|vr\b|xr\b/i],
+];
+const themesOf = (h) => THEMES.filter(([, re]) => re.test(`${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''}`)).map(([name]) => name);
+
 export async function listHackathons({ refresh = false } = {}) {
   if (!refresh && Date.now() - cache.at < TTL && cache.items.length) return cache;
   const results = [];
@@ -313,7 +389,7 @@ export async function listHackathons({ refresh = false } = {}) {
       const k = h.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
       return !seen.has(k) && seen.add(k);
     })
-    .map((h) => ({ ...h, perks: [...new Set([...(h.perks || []), ...careerPerks(`${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''} ${h.prize || ''}`)])], id: `${h.platform}:${h.url}` }));
+    .map((h) => ({ ...h, themes: themesOf(h), perks: [...new Set([...(h.perks || []), ...careerPerks(`${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''} ${h.prize || ''}`)])], id: `${h.platform}:${h.url}` }));
   cache = { at: now, items, sources: Object.fromEntries(results), byPlatform: cache.byPlatform };
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache));

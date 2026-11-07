@@ -37,6 +37,23 @@ const traced = (await send('Runtime.evaluate', { expression: `(() => { try {
   return [!!document.querySelector('.app-timeline'), /Added from your mail/.test(document.getElementById('traceOut').innerText), /Recruiters writing to you/.test(document.getElementById('traceOut').innerText)].join(',');
 } catch (e) { return 'error ' + e.message; } })()`, returnByValue: true })).result.result.value;
 if (traced !== 'true,true,true') errors.push(`tracker / Gmail result didn't render: ${traced}`);
+// Hacks: "Best for you" puts the hackathon that fits the profile first and says why; the theme filter works.
+const hacks = (await send('Runtime.evaluate', { expression: `(() => { try {
+  state.profile = { skills: ['Python', 'PyTorch', 'React'], headline: 'AI engineer', experience: [], projects: [] };
+  state.hacks = [
+    { id: 'a', platform: 'devpost', title: 'Retail Analytics Jam', url: 'https://x.test/a', mode: 'in-person', location: 'Ohio', themes: [], tags: [], perks: [] },
+    { id: 'b', platform: 'unstop', title: 'GenAI Build Sprint with PyTorch', url: 'https://x.test/b', mode: 'online', themes: ['AI / ML'], tags: ['Python'], perks: ['PPI'] },
+  ];
+  state.hackSources = {};
+  $('#hackSort').value = 'match';
+  renderHacks();
+  const first = document.querySelector('#hackList .hack .t a')?.textContent;
+  const badge = document.querySelector('#hackList .hb.match')?.textContent || '';
+  $('#hackTheme').value = 'AI / ML'; renderHacks();
+  const filtered = document.querySelectorAll('#hackList .hack').length;
+  return [first === 'GenAI Build Sprint with PyTorch', /pytorch|python/i.test(badge), filtered === 1].join(',');
+} catch (e) { return 'error ' + e.message; } })()`, returnByValue: true })).result.result.value;
+if (hacks !== 'true,true,true') errors.push(`Hacks "Best for you" didn't rank or filter right: ${hacks}`);
 ws.close(); c.kill();
 const ok = JSON.parse(opened || '[]');
 const bad = tabs.filter((_, i) => !ok[i]);

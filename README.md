@@ -407,9 +407,12 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 
 ### Hacks tab
 
-- Open hackathons from **Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia**, with prize, mode, location, team size, themes and deadline.
+- **10 platforms:** Devpost (every open page), Unstop (every page), Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH and ETHGlobal. About 400+ open hackathons at a time, cached for 30 minutes.
+- **✨ Best for you** (the default sort): ranks by your skills named in the hackathon, its themes against your profile, PPI / PPO and internship rewards, whether you can take part (online or in India) and time left to register. Each card shows what matched.
+- **Filters:** theme (AI / ML, Web3, FinTech, Health, Climate, Security, Hardware / IoT…), closes this week, online / in person / hybrid, India / online, 🎯 PPI / PPO, saved only, and search.
+- Each card has the prize, mode, location, team size, themes and deadline.
 - **🎯 PPI / PPO:** shows only hackathons whose rewards include a pre-placement interview (PPI), a pre-placement offer (PPO), an internship or a hiring track, with offers listed first. Each card shows its perks as green badges (hover for the reward text). On Unstop these come from the organiser's own PPI / PPO flags; elsewhere from the reward text, title and tags.
-- **Search** (AI, web3, fintech, a city…), filter **Online / In person / Hybrid**, **India / online** only, **Saved only**, and sort by **closing soon**, **biggest prize** or **most popular**.
+- **Search** (AI, web3, fintech, a city…), filter **Online / In person / Hybrid**, **India / online** only, **Saved only**, and sort by **best for you**, **closing soon**, **biggest prize** or **most popular**.
 - Deadlines turn **red** under 24 hours and **amber** under 4 days. **☆** saves one to your shortlist.
 - Results are cached for 30 minutes and kept on disk. If a platform is down, its last results stay and its chip shows "!".
 

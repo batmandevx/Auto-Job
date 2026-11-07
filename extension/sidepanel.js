@@ -546,6 +546,10 @@ async function fillPage(pageNo = 1) {
   }
   };
 
+  // The whole form first: scroll through it and open collapsed sections, so nothing is missed.
+  const revealed = (await callAll(tab.id, 'revealAll').catch(() => [])).reduce((n, f) => n + (f.result?.expanded || 0), 0);
+  if (revealed) progress(`Page ${pageNo}: opened ${revealed} collapsed section${revealed > 1 ? 's' : ''}`);
+
   // Repeating sections ("Work Experience → Add"): add as many entries as your profile has (3 jobs, 1 degree, your languages).
   await addSectionEntries(tab, async (kind, n, frameId) => {
     entryHint = { section: kind[0].toUpperCase() + kind.slice(1), entry: n };
@@ -1712,7 +1716,44 @@ const PLAT = {
   lablab: { name: 'lablab.ai', c: '#7c3aed' },
   taikai: { name: 'Taikai', c: '#ff2d55' },
   hackindia: { name: 'HackIndia', c: '#ff7a00' },
+  mlh: { name: 'MLH', c: '#1d539f' },
+  ethglobal: { name: 'ETHGlobal', c: '#6b5bff' },
 };
+
+// How well a hackathon fits you: your skills named in it, its themes against your profile, career perks,
+// whether you can take part (online / India), and time left to register.
+const MY_THEMES = {
+  'AI / ML': /\b(ai|ml|machine learning|deep learning|llm|nlp|pytorch|tensorflow|computer vision|genai|data science|rag|agents?)\b/i,
+  'Web3': /blockchain|web3|solidity|ethereum|smart contract/i,
+  'FinTech': /fintech|finance|payments?|banking|trading/i,
+  'Mobile / Web': /react|node|javascript|typescript|frontend|full[\s-]?stack|next\.?js|flutter|android|ios|mern/i,
+  'Cloud / DevOps': /aws|azure|gcp|docker|kubernetes|devops|cloud|terraform/i,
+  'Security': /security|cyber|ctf/i,
+  'Hardware / IoT': /iot|embedded|arduino|raspberry|robotics|drone/i,
+  'Health': /health|medical|bio/i,
+  'Climate': /climate|energy|sustainab/i,
+  'Gaming': /unity|unreal|game/i,
+};
+function hackMatch(h) {
+  const p = state.profile || {};
+  if (!state.myHackProfile || state.myHackProfile.p !== p) {
+    const skills = [...new Set((p.skills || []).map((s) => String(s).toLowerCase().trim()).filter((s) => s.length >= 2 && s.length <= 30))];
+    const text = `${p.headline || ''} ${(p.skills || []).join(' ')} ${(p.experience || []).map((e) => e.title).join(' ')} ${(p.projects || []).map((x) => x.name).join(' ')}`;
+    state.myHackProfile = { p, skills, themes: Object.keys(MY_THEMES).filter((t) => MY_THEMES[t].test(text)) };
+  }
+  const me = state.myHackProfile;
+  const text = ` ${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''} `.toLowerCase();
+  const hits = me.skills.filter((s) => new RegExp(`[^a-z0-9]${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^a-z0-9]`).test(text)).slice(0, 3);
+  const themes = (h.themes || []).filter((t) => me.themes.includes(t));
+  const perks = h.perks || [];
+  const days = h.deadline ? (new Date(h.deadline) - Date.now()) / 86400000 : 30;
+  const reachable = h.mode === 'online' || /india/i.test(`${h.location} ${h.title}`) || ['unstop', 'devfolio', 'hack2skill', 'hackindia'].includes(h.platform);
+  // Fit comes first: perks and prizes count fully only for hackathons in your field (a PPO on a slide-deck contest isn't for you).
+  const fit = hits.length * 3 + themes.length * 4;
+  const perkScore = (perks.includes('PPO') ? 6 : 0) + (perks.includes('PPI') ? 4 : 0) + (perks.length ? 2 : 0);
+  const score = fit + perkScore * (fit ? 1 : 0.3) + (reachable ? 3 : 0) + (days >= 2 && days <= 21 ? 1 : 0) + Math.min(3, Math.log10((h.prizeUSD || 0) + 1) / 1.5) * (fit ? 1 : 0.3);
+  return { score, hits, themes };
+}
 state.hacks = [];
 state.hackOff = new Set();
 state.hackMode = 'all';
@@ -1728,7 +1769,7 @@ function closesIn(iso) {
 }
 
 async function loadHacks(refresh = false) {
-  $('#hackList').innerHTML = `<div class="empty"><span class="big">⏳</span>Fetching hackathons from 8 platforms…</div>`;
+  $('#hackList').innerHTML = `<div class="empty"><span class="big">⏳</span>Fetching hackathons from ${Object.keys(PLAT).length} platforms…</div>`;
   const r = await api(`/api/hackathons${refresh ? '?refresh=1' : ''}`);
   state.hacks = r.items || [];
   state.hackSources = r.sources || {};
@@ -1747,12 +1788,20 @@ function renderHacks() {
   const q = $('#hackSearch').value.toLowerCase().trim();
   const words = q.split(/[\s,]+/).filter(Boolean);
   const india = $('#hackIndia').checked;
+  // Themes on offer, with counts (kept as chosen across refreshes).
+  const counts = {};
+  for (const h of state.hacks) for (const t of h.themes || []) counts[t] = (counts[t] || 0) + 1;
+  const theme = $('#hackTheme').value;
+  $('#hackTheme').innerHTML = `<option value="">All themes</option>${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<option value="${esc(t)}" ${t === theme ? 'selected' : ''}>${esc(t)} (${n})</option>`).join('')}`;
+  const week = $('#hackWeek').checked;
   let list = state.hacks.filter(
     (h) =>
       !state.hackOff.has(h.platform) &&
       (state.hackMode === 'all' || h.mode === state.hackMode) &&
       (!$('#hackSaved').checked || state.savedHacks.has(h.id)) &&
       (!$('#hackPPO').checked || (h.perks || []).length > 0) &&
+      (!theme || (h.themes || []).includes(theme)) &&
+      (!week || (h.deadline && new Date(h.deadline) - Date.now() < 7 * 86400000)) &&
       (!india || h.mode === 'online' || /india|delhi|mumbai|bengaluru|bangalore|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|lucknow|jaipur|ahmedabad/i.test(`${h.location} ${h.title}`) || ['unstop', 'devfolio', 'hack2skill', 'hackindia'].includes(h.platform)) &&
       (!words.length || words.every((w) => `${h.title} ${h.organizer} ${h.location} ${(h.tags || []).join(' ')} ${h.mode}`.toLowerCase().includes(w))),
   );
@@ -1764,6 +1813,8 @@ function renderHacks() {
   const rank = (h) => ((h.perks || []).includes('PPO') ? 3 : 0) + ((h.perks || []).includes('PPI') ? 2 : 0) + ((h.perks || []).length ? 1 : 0);
   if ($('#hackPPO').checked) list.sort((a, b) => rank(b) - rank(a));
   if (sort === 'popular') list.sort((a, b) => (b.participants || 0) - (a.participants || 0));
+  const fit = new Map(list.map((h) => [h.id, hackMatch(h)]));
+  if (sort === 'match') list.sort((a, b) => fit.get(b.id).score - fit.get(a.id).score || (a.deadline ? new Date(a.deadline) : far) - (b.deadline ? new Date(b.deadline) : far));
   $('#hackSummary').textContent = `${list.length} open hackathons${state.hacks.length !== list.length ? ` (of ${state.hacks.length})` : ''} · updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   $('#hackList').innerHTML = list.length
     ? list
@@ -1779,7 +1830,7 @@ function renderHacks() {
             <div class="body">
               <div class="t"><a href="${esc(safeUrl(h.url))}" target="_blank">${esc(h.title)}</a></div>
               <div class="m">${[h.organizer && h.organizer !== p.name ? esc(h.organizer) : '', h.mode ? esc(h.mode) : '', h.location ? `📍 ${esc(h.location)}` : '', h.participants ? `👥 ${Number(h.participants).toLocaleString()}` : '', h.stage ? esc(h.stage) : ''].filter(Boolean).join(' · ')}</div>
-              <div class="badges"><span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${(h.perks || []).map((k) => `<span class="hb perk" title="${esc(h.rewards || k)}">🎯 ${esc(k)}</span>`).join('')}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
+              <div class="badges">${(() => { const m = fit.get(h.id); const why = [...m.hits, ...m.themes.filter((t) => !m.hits.length)].slice(0, 3); return why.length ? `<span class="hb match" title="Matches your profile">✨ ${esc(why.join(', '))}</span>` : ''; })()}<span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${(h.perks || []).map((k) => `<span class="hb perk" title="${esc(h.rewards || k)}">🎯 ${esc(k)}</span>`).join('')}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
             </div>
             <button class="save ${state.savedHacks.has(h.id) ? 'on' : ''}" data-save="${esc(h.id)}" title="Save">${state.savedHacks.has(h.id) ? '★' : '☆'}</button>
           </div>`;
@@ -1959,6 +2010,8 @@ on('#refreshTracker', loadTracker);
 on('#refreshHacks', () => loadHacks(true));
 $('#hackSearch').addEventListener('input', renderHacks);
 $('#hackSort').addEventListener('change', renderHacks);
+$('#hackTheme').addEventListener('change', renderHacks);
+$('#hackWeek').addEventListener('change', renderHacks);
 $('#hackSaved').addEventListener('change', renderHacks);
 $('#hackPPO').addEventListener('change', renderHacks);
 $('#hackIndia').addEventListener('change', renderHacks);

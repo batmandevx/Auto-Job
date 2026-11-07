@@ -541,3 +541,7 @@ button.mini { font-size: 12px; padding: 2px 8px; margin-left: 4px; }
 .app-timeline li { margin: 2px 0; }
 .app-timeline li.k-rejected b { color: #dc2626; } .app-timeline li.k-offer b, .app-timeline li.k-interview b { color: #16a34a; }
 .trace-outreach summary { cursor: pointer; }
+
+/* Hacks: why a hackathon fits you */
+.hb.match { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; font-weight: 600; }
+#hackTheme { max-width: 150px; }

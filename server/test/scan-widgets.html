@@ -173,6 +173,7 @@
       github: $('#gh').value, portfolio: $('#pf')?.value, team: $('#depVal').value,
     };
     const expect = { country: 'India', degree: "Bachelor's Degree", langs: 'Python,Go', start: '2027-01-04', reloc: 'true', notice: '30', heard: 'LinkedIn', github: 'https://github.com/riya-sample', portfolio: 'https://riya-sample.dev', team: 'Machine Learning Platform' };
+    if ($('#cty').value) fail.push(`text leaked into the Country search box: "${$('#cty').value}"`);
     for (const k of Object.keys(expect)) if (got[k] !== expect[k]) fail.push(`${k}: got ${JSON.stringify(got[k])}, wanted ${expect[k]}`);
     return { fields: fields.length, fail, got: { ...got, expanded: rev?.expanded, results: res } };
   };

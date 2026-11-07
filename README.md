@@ -71,7 +71,8 @@ Auto Job does the repetitive part and leaves the decisions to you:
 | Fight Workday dropdowns and date boxes | Opens lists, searches, walks nested categories, types split MM / YYYY boxes |
 | Click Next, fix errors, click Next again | Moves page to page, reads the site's error messages and corrects them |
 | Hunt for the OTP in Gmail | Reads the code (or verification link) from your inbox and enters it |
-| Track 30 applications in a spreadsheet | Keeps a tracker with statuses from *Applied* to *Offer* |
+| Track 30 applications in a spreadsheet | Reads your Gmail and keeps the tracker up to date: every application, every reply, every rejection |
+| Dig through hackathon sites | Lists 400+ open hackathons from 10 platforms, ranked for you |
 
 **What it will not do:** press the final Submit for you, invent experience, or solve CAPTCHAs. You stay in control of everything that matters.
 
@@ -95,15 +96,25 @@ Auto Job does the repetitive part and leaves the decisions to you:
   - rich text
   - repeating sections (Work Experience 1, 2, 3…)
   - fields inside iframes and shadow DOM
+  - sliders, rating grids and plain answer buttons that only change colour
+  - long "virtual" dropdowns that only draw the options in view (scrolled to the right one)
+  - the hint under a field ("DD/MM/YYYY", "in LPA", "max 200 words", "include country code"), followed exactly
+- **📜 Sees the whole form.** It scrolls through the page (and boxes inside it) so sections that load on scroll appear, and opens collapsed sections like "Show additional questions" before it starts.
+- **🧠 Uses your profile as the truth.** When a portal pre-fills your work history from its own resume reading (swapped dates, "Remote" as a description, a company of just "AI"), each entry is matched to your real role by title, company and start date, and rewritten.
 - **📎 Uploads documents.** Resume, cover letter, and also photo, signature, marksheets, ID / address proof and PAN when a form asks for them.
 - **🔁 Works through every page.** It clicks *Next*, waits for questions that only appear after an answer, fixes validation errors and retries.
+- **🔎 Checks before you continue.** After filling, it reads the page back and lists dates that end before they start, leftover import text and required boxes still empty. Entries your profile doesn't have get a *Delete it* button you press.
+- **🙅 Never claims what it didn't do.** An answer that isn't in a dropdown's list is reported as "pick it yourself", never as filled, and text only goes into the box that has focus.
 - **👁 Has eyes.** After filling a page it takes screenshots and has Gemini look at them like a person would: red errors, empty required boxes, a value in the wrong field. Then it goes to that field and fixes it.
 - **⌨️ Types for real.** Boxes a site still rejects are retyped with genuine keystrokes through Chrome's own debugger, which sites can't tell apart from your keyboard.
 - **🔐 Reads OTPs from your Gmail and clicks verify links, automatically.** When a portal says "enter the code we emailed you", Auto Job finds that email, types the code (including 6 separate boxes) and carries on. When it says "check your inbox", it opens the verification link and fills the next page. Inbox access is read-only.
 - **📨 Applies by email.** When a post just says "send your CV to hr@…", it drafts the email with the files attached and sends it from your Gmail after you confirm.
-- **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list, and applies to the ones you tick, one after another.
-- **🏆 Lists hackathons** from 8 platforms in one searchable list.
-- **📊 Tracks your applications** from *To apply* to *Offer*.
+- **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list ranked by how well each fits you, and applies to the ones you tick, one after another. It skips jobs you already applied to, stops at 25 a day and paces itself.
+- **🏆 Finds hackathons** from 10 platforms (Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH, ETHGlobal), ranked *Best for you* by your skills and themes, with PPI / PPO and internship rewards flagged.
+- **📬 Reads your whole inbox for your job search.** Every email in the last 90 days is sorted; confirmations, tests, interviews, rejections and offers update the tracker on their own, applications you never tracked are added, and each card keeps its emails as a timeline. It checks again every 3 hours.
+- **📊 Tracks your applications** from *To apply* to *Offer*, with insights: how many heard back, how many reached interview, where rejections happen.
+- **✉️ Drafts follow-ups and 🎯 prepares you for interviews.** A short follow-up email for applications that went quiet (you send it), and a one-page brief when an interview is coming: likely questions, your stories, questions to ask.
+- **🐞 Reports a form that went wrong.** One button saves a privacy-scrubbed copy of the form, which becomes a test so the fix stays fixed.
 - **🩺 Heals itself.** Every field that fails or that the site rejects goes up one ladder: normal fill → real typing → real click → a corrected value from the AI. It checks after every step, remembers per site what worked, and hands you a "Needs you" list with a **Show me** button for anything it couldn't fix.
 - **🛑 Waits for you at the end.** You review the highlighted fields and press Submit twice.
 - **🏠 Runs entirely on your laptop.** The server is a small program on your own machine. Your profile, documents and passwords never go to any Auto Job server, because there isn't one.
@@ -179,26 +190,40 @@ sequenceDiagram
 
 ## Tour
 
+Every screenshot is the real panel and the real form-filling engine, with the made-up demo profile "Riya Sharma" and made-up companies.
+
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/panel-apply.png" alt="Apply tab: four steps and the Do it all button" /><br><b>Apply</b>: one button runs Job → Resume → Fill → Review. Switches for auto-Next, cover letter, "only empty fields" and 100% keywords.</td>
-<td width="50%"><img src="docs/screenshots/fill-results.png" alt="Fill results list in the panel" /><br><b>Fill results</b>: every field, its value, and where the value came from (profile, memory or AI). Anything that needs you is listed first.</td>
+<td width="50%"><img src="docs/screenshots/panel-apply.png" alt="Apply tab: four steps, the Do it all button and its switches" /><br><b>Apply</b>: one button runs Job → Resume → Fill → Review. Switches for auto-Next, cover letter, only-empty fields, 100% keywords, the visual check, real typing and company research.</td>
+<td width="50%"><img src="docs/screenshots/fill-check.png" alt="Fill results: filled fields with their source, an AI answer to check, and the page check flagging a date and leftover import text" /><br><b>Fill results and the page check</b>: every field, its value and where it came from. After filling, the page is read back: dates in the wrong order, text left over from the site's resume import, and extra entries (with a <i>Delete it</i> button you press).</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/widgets-filled.png" alt="A form with a Greenhouse-style search dropdown, an MUI select, a virtual list, checkboxes, a date, a switch, a collapsed section and a section that loads on scroll, all filled" /><br><b>Hard widgets</b>: a Greenhouse search dropdown ("India", not "Indiana"), an MUI select, a 60-option virtual list scrolled to option 48, "select all that apply", a date, a switch, a collapsed section it opened and a section that only loads when scrolled to.</td>
+<td><img src="docs/screenshots/versatile-filled.png" alt="Yes / No buttons, experience-range buttons, a slider and a rating grid, each answer outlined in green" /><br><b>Buttons, sliders, grids</b>: plain answer buttons that only change colour, a slider moved by keyboard, and a rating grid where each row is a question and the column headers are its options.</td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/tailored-resume.png" alt="Tailored one-page resume" /><br><b>Tailored resume</b>: one page, single column, real text, clickable links, the job's title and keywords up top. Every number comes from your own resume.</td>
 <td><img src="docs/screenshots/cover-letter.png" alt="Generated cover letter" /><br><b>Cover letter</b>: opens with your most relevant result, proves fit with two achievements, closes with a call to action. No "I am writing to express my interest".</td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/workday-fill.png" alt="Workday-style experience page filled" /><br><b>Workday-style pages</b>: Work Experience entries from your profile in order, split MM / YYYY date boxes, "I currently work here" ticked only for your current job.</td>
-<td><img src="docs/screenshots/panel-jobs.png" alt="Jobs tab with job board presets and a merged job list" /><br><b>Jobs</b>: one-tap job boards. "Scan all my boards" merges every posting into one list; tick jobs and press <i>Start applying</i>.</td>
+<td><img src="docs/screenshots/workday-fill.png" alt="Workday-style experience page filled" /><br><b>Workday-style pages</b>: each work entry matched to your role (typos like "Microsfot" allowed) and rewritten from your profile, split MM / YYYY date boxes, "I currently work here" only for your current job.</td>
+<td><img src="docs/screenshots/panel-jobs.png" alt="Jobs tab with job board presets and a list ranked by match score" /><br><b>Jobs</b>: one-tap job boards. "Scan all my boards" merges every posting into one list ranked by match score; tick jobs and press <i>Start applying</i> (skips ones you applied to, 25 a day, paced).</td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/panel-hacks.png" alt="Hackathons tab" /><br><b>Hacks</b>: open hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai and HackIndia, with prize, mode and deadline.</td>
-<td><img src="docs/screenshots/panel-tracker.png" alt="Tracker tab" /><br><b>Tracker</b>: every application with its status, a timeline and notes. Counters for To apply / In process / Offers / Rejected.</td>
+<td><img src="docs/screenshots/panel-hacks.png" alt="Hacks tab: 440 open hackathons from 10 platforms, Best for you ranking with match badges" /><br><b>Hacks</b>: 400+ open hackathons from 10 platforms. <i>Best for you</i> ranks by your skills and themes and shows what matched (✨). Filters for theme, closes this week, mode, India / online and 🎯 PPI / PPO.</td>
+<td><img src="docs/screenshots/panel-tracker.png" alt="Tracker tab with counters, insights and the From your Gmail card" /><br><b>Tracker</b>: counters, a pipeline bar and insights (heard back, reached interview, where rejections happen), then what your Gmail said since the last check.</td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/panel-profile.png" alt="Profile tab" /><br><b>Profile</b>: import one or several resumes (merged into one master profile), personal details, documents, standard answers, remembered answers.</td>
+<td><img src="docs/screenshots/gmail-trace.png" alt="From your Gmail: an application added from mail, a status moved to Interview with Undo, recruiter messages" /><br><b>Reads your inbox for you</b>: applications you never tracked are added from the emails about them, statuses move forward (Undo is one tap), and recruiters writing to you are listed.</td>
+<td><img src="docs/screenshots/interview-prep.png" alt="A tracker card with its email timeline and an interview prep brief: likely questions, your stories, questions to ask, day-before checklist" /><br><b>Email timeline and interview prep</b>: every email about an application in order, and a one-page brief built from the job, your profile and the company research.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/follow-up.png" alt="A follow-up email draft on an application with no reply for 11 days" /><br><b>Follow-up drafts</b>: for applications with no reply after a week. A short, polite email with one true reason you fit. Copy it and send it yourself.</td>
+<td><img src="docs/screenshots/panel-profile.png" alt="Profile tab" /><br><b>Profile</b>: import one or several resumes (merged into one master profile), personal details, documents, standard answers, remembered answers. Flags roles with no location.</td>
+</tr>
+<tr>
 <td><img src="docs/screenshots/panel-apply-light.png" alt="Apply tab in light mode" /><br><b>Light and dark</b>: follows your system theme. Runs as a side panel in Chrome / Edge / Brave, and as a popup, tab or window in Arc.</td>
+<td><img src="docs/screenshots/company-research.png" alt="Company research card" /><br><b>Company research</b>: products, stack, recent news, interview focus, red flags, your fit and an angle, each fact with its source.</td>
 </tr>
 </table>
 
@@ -581,6 +606,10 @@ What makes it work on real portals and not only on simple forms:
 | **Hints under fields** ("Format: DD/MM/YYYY", "Amount in LPA", "Max 200 words", "Include country code") | Read with the question and followed: dates use the format shown, written answers are cut to the word limit at a sentence end. |
 | **Plain answer buttons, sliders, rating grids** | Yes / No and range buttons that only change colour are read as questions (only with a question written above them). Sliders are moved by keyboard. In a table of radios each row is a question and the column headers are its options. |
 | **Uploads the site empties** (Workday lists the file beside an empty box) | The listed file names are read, so the same resume isn't uploaded again on the next pass. |
+| **Sections that load on scroll, collapsed sections** | Scrolls through the page and through scrolling boxes inside it, then opens "Show additional questions" toggles and closed panels. Menus, dropdowns and the site's navigation are never touched. |
+| **Virtual lists** (Ant Design, react-window: only ~10 of 60 options exist at a time) | Finds the box that really scrolls, starts from the top and scrolls until the option appears. |
+| **A value that isn't in the list** | Reported as "no option matches… pick it yourself". Read-only dropdown boxes are never typed into, so a typed value can't be mistaken for a choice. |
+| **Typing landing in the wrong box** | Text is only typed into the field that has focus; date, number, slider and colour inputs are set directly. |
 | **Validation errors** | Reads each field's error and the page's error banner. Common fixes (digits only, date format, missing `https://`, length) are instant. Anything else goes back to the AI with the site's message and the rejected value. |
 | **Hidden padding** (zero-width spaces in labels) | Strips it so the question is read correctly. |
 | **Job page vs form** | Ignores the site's search box, menus and "Save job" toggles, presses *Apply now*, and never presses a form's own "Apply" submit button. |

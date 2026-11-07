@@ -596,7 +596,7 @@ async function fillPage(pageNo = 1) {
     const mine = { education: state.profile?.education?.length || 0, experience: state.profile?.experience?.length || 0 };
     for (const kind of ['education', 'experience']) {
       for (let n = a.entries[kind]; mine[kind] && n > mine[kind]; n--) {
-        rows.push(`<div class="item warn"><div class="q">🧹 ${kind === 'education' ? 'Education' : 'Work Experience'} ${n} isn't in your profile <span class="tag review">extra entry</span></div><div class="v">The site added it from your resume. <button class="mini" data-delentry="${fr.frameId}:${kind}:${n}">Delete it</button></div></div>`);
+        rows.push(`<div class="item warn"><div class="q">🧹 ${kind === 'education' ? 'Education' : 'Work Experience'} ${n} isn't in your profile <span class="tag review">extra entry</span></div><div class="v">The site added it from your resume. <button class="btn ghost sm" data-delentry="${fr.frameId}:${kind}:${n}">Delete it</button></div></div>`);
       }
     }
   }
@@ -1533,7 +1533,7 @@ function locationNote(p) {
 }
 // Follow-up drafts and interview prep briefs on tracker cards (drafts to read and send yourself).
 function coachHtml(kind, r) {
-  if (kind === 'followup') return `<div class="coach"><b>${esc(r.subject || 'Follow-up')}</b><pre class="coach-text">${esc(r.body || '')}</pre><button class="mini" data-copy="1">Copy</button></div>`;
+  if (kind === 'followup') return `<div class="coach"><b>${esc(r.subject || 'Follow-up')}</b><pre class="coach-text">${esc(r.body || '')}</pre><button class="btn ghost sm" data-copy="1">Copy</button></div>`;
   const list = (title, items, f) => (items || []).length ? `<p><b>${title}</b></p><ul>${items.map((x) => `<li>${f(x)}</li>`).join('')}</ul>` : '';
   return `<div class="coach coach-text"><p>${esc(r.summary || '')}</p>${list('Likely questions', r.likelyQuestions, (x) => `${esc(x.q)}<br><span class="hint">${esc(x.angle)}</span>`)}${list('Your stories', r.yourStories, (x) => `<b>${esc(x.story)}</b>: ${esc(x.use)}`)}${list('Ask them', r.askThem, esc)}${list('Day before', r.checklist, esc)}</div>`;
 }
@@ -1737,8 +1737,10 @@ const MY_THEMES = {
 function hackMatch(h) {
   const p = state.profile || {};
   if (!state.myHackProfile || state.myHackProfile.p !== p) {
-    const skills = [...new Set((p.skills || []).map((s) => String(s).toLowerCase().trim()).filter((s) => s.length >= 2 && s.length <= 30))];
-    const text = `${p.headline || ''} ${(p.skills || []).join(' ')} ${(p.experience || []).map((e) => e.title).join(' ')} ${(p.projects || []).map((x) => x.name).join(' ')}`;
+    // Skills are kept in groups ({ category, items }); one- and two-letter ones ("C", "Go") would match ordinary words.
+    const flat = (p.skills || []).flatMap((s) => (typeof s === 'string' ? [s] : s?.items || []));
+    const skills = [...new Set(flat.map((s) => String(s).toLowerCase().trim()).filter((s) => s.length >= 3 && s.length <= 30))];
+    const text = `${p.headline || ''} ${flat.join(' ')} ${(p.experience || []).map((e) => e.title).join(' ')} ${(p.projects || []).map((x) => x.name).join(' ')}`;
     state.myHackProfile = { p, skills, themes: Object.keys(MY_THEMES).filter((t) => MY_THEMES[t].test(text)) };
   }
   const me = state.myHackProfile;

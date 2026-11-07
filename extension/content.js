@@ -264,9 +264,12 @@
     el.blur();
   }
   // Replace the box's text through the browser's own editing (what a paste does): fires trusted input events.
+  const NO_TYPING = new Set(['date', 'month', 'week', 'time', 'datetime-local', 'number', 'range', 'color', 'file', 'checkbox', 'radio']);
   function insertText(el, text) {
     try {
+      if (el.tagName === 'INPUT' && NO_TYPING.has(el.type)) return false; // set directly, never typed
       el.focus();
+      if ((rootOf(el).activeElement || document.activeElement) !== el) return false; // it didn't take focus: typing would land elsewhere
       if (typeof el.select === 'function') el.select();
       const ok = document.execCommand('insertText', false, text);
       return ok && el.value === text;
@@ -1090,6 +1093,7 @@
       const opts = members.map(optionLabel);
       const wanted = Array.isArray(value) ? value : [value];
       let hit = false;
+      let chosen = null;
       for (const w of wanted) {
         const i = bestMatch(opts, String(w));
         if (i < 0) continue;
@@ -1098,6 +1102,7 @@
           if (!isChecked(members[i])) clickLikeUser(members[i]);
           await sleep(150);
           hit = true;
+          chosen ||= members[i];
           continue;
         }
         if (!isChecked(members[i])) members[i].click();
@@ -1108,8 +1113,9 @@
         if (!isChecked(members[i]) && (members[i].type === 'radio' || members[i].getAttribute('role') === 'radio'))
           return `didn't stick: "${opts[i]}" isn't selected`;
         hit = true;
+        chosen ||= members[i];
       }
-      if (hit) mark(members[0], review);
+      if (hit) mark(chosen || members[0], review);
       return hit ? 'filled' : `no option matches "${wanted.join(', ')}"`;
     }
 

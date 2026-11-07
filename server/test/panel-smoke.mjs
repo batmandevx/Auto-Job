@@ -39,7 +39,7 @@ const traced = (await send('Runtime.evaluate', { expression: `(() => { try {
 if (traced !== 'true,true,true') errors.push(`tracker / Gmail result didn't render: ${traced}`);
 // Hacks: "Best for you" puts the hackathon that fits the profile first and says why; the theme filter works.
 const hacks = (await send('Runtime.evaluate', { expression: `(() => { try {
-  state.profile = { skills: ['Python', 'PyTorch', 'React'], headline: 'AI engineer', experience: [], projects: [] };
+  state.profile = { skills: [{ category: 'ML', items: ['Python', 'PyTorch', 'React'] }], headline: 'AI engineer', experience: [], projects: [] };
   state.hacks = [
     { id: 'a', platform: 'devpost', title: 'Retail Analytics Jam', url: 'https://x.test/a', mode: 'in-person', location: 'Ohio', themes: [], tags: [], perks: [] },
     { id: 'b', platform: 'unstop', title: 'GenAI Build Sprint with PyTorch', url: 'https://x.test/b', mode: 'online', themes: ['AI / ML'], tags: ['Python'], perks: ['PPI'] },

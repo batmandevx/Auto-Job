@@ -17,7 +17,7 @@ import { mailConfigured, mailStatus, findVerification, sendApplication, smtpChec
 import { renderResumePDF, renderCoverLetterPDF } from './pdf.js';
 import { answerFields } from './answer.js';
 import { followUpDraft, interviewPrep } from './coach.js';
-import { saveAppExtra } from './store.js';
+import { saveAppExtra, DATA_DIR } from './store.js';
 import { getProfile, saveProfile, listApplications, upsertApplication, updateApplication, deleteApplication, STATUSES, rememberAnswers, getDocument, saveDocument, removeDocument, DOCUMENT_KINDS, DEFAULT_ANSWERS, RESUME_DIR } from './store.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -312,22 +312,50 @@ for (const [kind, make] of [['followup', followUpDraft], ['prep', interviewPrep]
   }));
 }
 
-app.post('/api/applications/trace', route(async (req, res) => {
-  const apps = listApplications().filter((a) => a.status !== 'saved');
-  if (!apps.length) return res.json({ checked: 0, updates: [], unmatched: [], applied: [] });
-  const oldest = Math.min(...apps.map((a) => new Date(a.appliedAt || a.createdAt).getTime()).filter(Boolean));
-  const since = Math.max(oldest - 2 * 86400_000, Date.now() - 180 * 86400_000);
-  const out = await traceOutcomes(apps, { since });
-  const applied = [];
-  for (const u of out.updates) {
-    const mail = { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence };
-    if (req.body?.apply && u.confident && u.change) {
-      updateApplication(u.appId, { status: u.to_status, mail });
-      applied.push(u);
-    } else if (req.body?.apply && u.confident) updateApplication(u.appId, { mail }); // same status: just keep the email as evidence
-  }
-  res.json({ ...out, applied });
-}));
+// Read your Gmail for your job search: every email in the window is sorted (rules, then the AI for unclear ones),
+// tracked applications move forward, and applications you didn't track are added from the emails about them.
+const DAY_MS = 86400_000;
+const TRACE_FILE = path.join(DATA_DIR, 'last-trace.json');
+let tracing = null;
+function runTrace({ apply = true, autoAdd = true, days } = {}) {
+  tracing ||= (async () => {
+    const apps = listApplications().filter((a) => a.status !== 'saved');
+    const window = Math.min(365, Math.max(7, Number(days) || Number(process.env.MAIL_SCAN_DAYS) || 90));
+    const oldest = Math.min(Infinity, ...apps.map((a) => new Date(a.appliedAt || a.createdAt).getTime()).filter(Boolean));
+    const since = Math.max(Math.min(Date.now() - window * DAY_MS, oldest - 2 * DAY_MS), Date.now() - 365 * DAY_MS);
+    const out = await traceOutcomes(apps, { since });
+    const applied = [];
+    for (const u of out.updates) {
+      const mail = { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence };
+      if (apply && u.confident && u.change) {
+        updateApplication(u.appId, { status: u.to_status, mail });
+        applied.push(u);
+      } else if (apply && u.confident) updateApplication(u.appId, { mail }); // same status: just keep the email on the timeline
+    }
+    const added = [];
+    if (apply && autoAdd) {
+      for (const a of out.created) {
+        const app = upsertApplication({ company: a.company, title: a.title || '(role from email)', status: a.status, via: 'gmail', notes: `Found in Gmail: ${a.mail[0].subject}` });
+        saveAppExtra(app.id, { appliedAt: a.appliedAt, createdAt: a.appliedAt });
+        for (const m of a.mail) updateApplication(app.id, { mail: { id: m.mailId, kind: m.kind, subject: m.subject, from: m.from, date: m.date, evidence: m.evidence } });
+        added.push({ ...a, appId: app.id });
+      }
+    }
+    const result = { ...out, applied, added, at: new Date().toISOString() };
+    fs.writeFileSync(TRACE_FILE, JSON.stringify(result, null, 2));
+    return result;
+  })().finally(() => (tracing = null));
+  return tracing;
+}
+app.post('/api/applications/trace', route(async (req, res) => res.json(await runTrace({ apply: !!req.body?.apply, autoAdd: req.body?.autoAdd !== false, days: req.body?.days }))));
+app.get('/api/applications/trace/last', (req, res) => res.json(fs.existsSync(TRACE_FILE) ? JSON.parse(fs.readFileSync(TRACE_FILE, 'utf8')) : null));
+// While the server runs it checks your mail on its own (MAIL_SCAN_HOURS, default 3; 0 turns it off).
+const SCAN_HOURS = Number(process.env.MAIL_SCAN_HOURS ?? 3);
+if (SCAN_HOURS > 0 && mailConfigured() && !process.env.CI) {
+  const scan = () => runTrace().then((r) => console.log(`Gmail: ${r.jobEmails} job emails, ${r.applied.length} updated, ${r.added.length} added`)).catch((e) => console.log('Gmail check failed:', e.message));
+  setTimeout(scan, 2 * 60_000).unref();
+  setInterval(scan, SCAN_HOURS * 3600_000).unref();
+}
 
 app.patch('/api/applications/:id', (req, res) => {
   const a = updateApplication(req.params.id, req.body);

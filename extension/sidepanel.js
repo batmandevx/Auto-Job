@@ -1504,7 +1504,7 @@ function renderTracker() {
               <div class="app-sub">${esc([a.company, a.location].filter(Boolean).join(' · '))}${a.via === 'email' ? ' · via email' : ''} · ${a.status === 'saved' ? 'saved' : 'applied'} ${ago(a.appliedAt || a.createdAt)}</div></div>
               <select class="status-select" data-status="${a.id}" style="--c:${m.c}">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === a.status ? 'selected' : ''}>${s.icon} ${s.label}</option>`).join('')}</select></div>
             <div class="timeline">${tl}<span class="tl">${m.label}${a.history?.length ? ` · ${ago(a.history.at(-1).at)}` : ''}</span></div>
-            ${mailLine(a)}
+            ${mailLine(a)}${mailTimeline(a)}
             <textarea class="app-notes" data-notes="${a.id}" rows="1" placeholder="Add a note (recruiter name, test date, link…)">${esc(a.notes || '')}</textarea>
             <div class="app-actions">${a.resume ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.resume)}" target="_blank" title="The resume you sent">📄 Resume sent</a>` : ''}${a.coverLetter ? `<a href="${esc(SERVER)}/api/resumes/${encodeURIComponent(a.coverLetter)}" target="_blank">✉️ Cover letter</a>` : ''}${a.status === 'saved' && a.url ? `<button class="go" data-apply="${a.id}">Apply now</button>` : ''}${a.url && safeUrl(a.url) !== '#' ? `<a href="${esc(a.url)}" target="_blank">Open job</a>` : ''}${coachButtons(a)}<button class="del" data-del="${a.id}">Delete</button></div><div class="app-coach" id="coach-${a.id}"></div>
           </div>`;
@@ -1541,7 +1541,14 @@ function coachButtons(a) {
   return `${quiet ? `<button data-coach="followup" data-id="${a.id}">✉️ Follow-up draft</button>` : ''}${interviewing ? `<button data-coach="prep" data-id="${a.id}">🎯 Interview prep</button>` : ''}`;
 }
 
-const KIND_LABEL = { rejected: 'Rejected', interview: 'Interview invite', assessment: 'Assessment', offer: 'Offer', applied: 'Application received' };
+// All the emails about one application, oldest first: its progress as the company wrote it.
+function mailTimeline(a) {
+  const mail = [...(a.mail || [])].sort((x, y) => new Date(x.date) - new Date(y.date));
+  if (mail.length < 2) return '';
+  return `<details class="app-timeline"><summary>📬 ${mail.length} emails</summary><ol>${mail.map((m) => `<li class="k-${esc(m.kind)}"><b>${esc(KIND_LABEL[m.kind] || m.kind)}</b> · ${new Date(m.date).toLocaleDateString()} · ${esc(String(m.subject || '').slice(0, 80))}</li>`).join('')}</ol></details>`;
+}
+
+const KIND_LABEL = { rejected: 'Rejected', interview: 'Interview invite', assessment: 'Assessment', offer: 'Offer', applied: 'Application received', update: 'Update', outreach: 'Recruiter' };
 
 // Rejections and responses at a glance: what happens to your applications, and at which stage you're stopped.
 function renderInsights(apps) {
@@ -1584,12 +1591,16 @@ function renderTrace(r) {
   const pending = (r.updates || []).filter((u) => u.change && !u.confident);
   const added = new Set((state.apps || []).flatMap((a) => (a.mail || []).map((m) => m.id)));
   const untracked = (r.unmatched || []).filter((u) => !added.has(u.mailId));
-  $('#traceMeta').textContent = `${r.checked} emails checked · ${ago(Date.now())}`;
+  $('#traceMeta').textContent = r.scanned ? `${r.scanned} emails read · ${r.jobEmails} about your job search · ${ago(r.at || Date.now())}` : `${r.checked} emails checked · ${ago(Date.now())}`;
+  const addedApps = (r.added || []).filter((u) => (state.apps || []).some((a) => a.id === u.appId));
+  const outreach = r.outreach || [];
   $('#traceOut').innerHTML = [
+    addedApps.length ? `<div class="page">Added from your mail (${addedApps.length})</div>${addedApps.map((u) => row({ ...u, kind: u.mail.at(-1)?.kind || 'applied', evidence: u.mail.at(-1)?.evidence, subject: u.mail.at(-1)?.subject || '', date: u.mail.at(-1)?.date, title: `${u.title ? `${u.title} · ` : ''}${u.mail.length} email${u.mail.length > 1 ? 's' : ''}` }, `<button class="btn ghost sm" data-unadd="${esc(u.appId)}">Remove</button>`)).join('')}` : '',
     applied.length ? `<div class="page">Updated (${applied.length})</div>${applied.map((u) => row({ ...u, title: `${STATUS[u.from_status]?.label || u.from_status} → ${STATUS[u.to_status]?.label || u.to_status}` }, `<button class="btn ghost sm" data-undo="${esc(u.appId)}" data-to="${esc(u.from_status)}">Undo</button>`)).join('')}` : '',
     pending.length ? `<div class="page">Check these (${pending.length})</div>${pending.map((u) => row(u, `<button class="btn ghost sm" data-confirm="${esc(u.appId)}" data-to="${esc(u.to_status)}" data-mail="${esc(u.mailId)}">Apply</button>`)).join('')}` : '',
     untracked.length ? `<div class="page">Not in your tracker (${untracked.length}) <button class="btn ghost sm" data-addall="1">Add all</button></div>${untracked.map((u, i) => row(u, `<button class="btn ghost sm" data-add="${i}">Add</button>`)).join('')}` : '',
-    !applied.length && !pending.length && !untracked.length ? '<p class="hint">Nothing new: your tracker matches your inbox.</p>' : '',
+    outreach.length ? `<details class="trace-outreach"><summary class="page">Recruiters writing to you (${outreach.length})</summary>${outreach.map((u) => row(u)).join('')}</details>` : '',
+    !addedApps.length && !applied.length && !pending.length && !untracked.length && !outreach.length ? '<p class="hint">Nothing new: your tracker matches your inbox.</p>' : '',
   ].join('');
   state.untracked = untracked;
 }
@@ -1604,6 +1615,10 @@ $('#traceOut').addEventListener('click', async (e) => {
   b.disabled = true;
   try {
     if (b.dataset.undo) await patchApp(b.dataset.undo, { status: b.dataset.to });
+    if (b.dataset.unadd) {
+      await api(`/api/applications/${b.dataset.unadd}`, { method: 'DELETE' });
+      await loadTracker();
+    }
     if (b.dataset.confirm) {
       const u = state.trace.updates.find((x) => x.mailId === b.dataset.mail);
       await patchApp(b.dataset.confirm, { status: b.dataset.to, mail: { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence } });

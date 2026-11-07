@@ -436,6 +436,11 @@ Open any job posting, press **Do it all on this page**, review the orange fields
 - Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
 - Each card has a status dropdown, a timeline, notes (recruiter, test date, link) and **Open job**.
 - Counters at the top filter the list. Search by company or role.
+- **📬 Reads your whole inbox for your job search** (Check Gmail, and on its own every 3 hours while the server runs). Every email in the last 90 days is sorted by sender and subject; job-related ones are read in full. Rules recognise applicant-tracking systems, job portals, test platforms and outcome wording; the AI reads the unclear ones (subject, sender and first lines only) to say whether it's really about *your* applications, which employer (never the job board) and which role. Job alerts, newsletters, hackathons and receipts are left out.
+  - Tracked applications move forward (never backwards, except rejections and offers, which always land).
+  - Applications you never tracked are **added from the emails about them**, one per role, with their status, and later emails follow them. Remove any with one click.
+  - Each card keeps **every email about it as a timeline**. Recruiters writing to you are listed separately.
+  - `MAIL_SCAN_DAYS` (default 90), `MAIL_SCAN_HOURS` (default 3, 0 = off) and `MAIL_AI=off` (rules only) in `server/.env`.
 - **✉️ Follow-up draft:** on applications with no reply after 7 days. A short, polite email naming the role, when you applied and one true reason you fit. Copy it and send it yourself; Auto Job never sends it.
 - **🎯 Interview prep:** on applications at assessment or interview (or when Gmail found an invite). A one-page brief from the job description, your profile and the company research: likely questions with how to answer from your own work, which of your stories to use, questions to ask them, and a checklist for the day before.
 

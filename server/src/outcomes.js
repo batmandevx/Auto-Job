@@ -150,7 +150,7 @@ async function aiRead(list) {
       if (!out.size && k >= 80) return null; // no AI right now: the rules-only result stands
     }
   }
-  return out;
+  return out.size ? out : null; // nothing read at all: the rules decide, as without AI
 }
 
 // Platforms and subject fragments that are never the employer.
@@ -182,7 +182,8 @@ const parseMail = async (msg) => {
 
 // Read your mail since `since` (ms): every email's sender and subject, then the full text of the job-related ones.
 // Returns status changes for tracked applications, new applications found in your mail, and recruiter messages.
-export async function traceOutcomes(apps, { since, limit = 600 } = {}) {
+// `ignore`: ids of emails you dismissed (an application you removed), never read again.
+export async function traceOutcomes(apps, { since, limit = 600, ignore = [] } = {}) {
   if (!mailConfigured()) throw new Error('Connect Gmail first: set GMAIL_USER and GMAIL_APP_PASSWORD in server/.env');
   const c = imapClient();
   const days = Math.max(1, Math.ceil((Date.now() - since) / 86400_000) + 1);
@@ -208,7 +209,7 @@ export async function traceOutcomes(apps, { since, limit = 600 } = {}) {
   }
 
   // 3) What each email is: rules first, the AI for the uncertain ones.
-  const seen = new Set(apps.flatMap((a) => (a.mail || []).map((x) => x.id)));
+  const seen = new Set([...apps.flatMap((a) => (a.mail || []).map((x) => x.id)), ...ignore]);
   const fresh = mails.filter((m) => !seen.has(m.id)).sort((a, b) => new Date(a.date) - new Date(b.date));
   const kinds = new Map();
   const unsure = [];

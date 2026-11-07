@@ -1741,11 +1741,11 @@ function hackMatch(h) {
     const flat = (p.skills || []).flatMap((s) => (typeof s === 'string' ? [s] : s?.items || []));
     const skills = [...new Set(flat.map((s) => String(s).toLowerCase().trim()).filter((s) => s.length >= 3 && s.length <= 30))];
     const text = `${p.headline || ''} ${flat.join(' ')} ${(p.experience || []).map((e) => e.title).join(' ')} ${(p.projects || []).map((x) => x.name).join(' ')}`;
-    state.myHackProfile = { p, skills, themes: Object.keys(MY_THEMES).filter((t) => MY_THEMES[t].test(text)) };
+    state.myHackProfile = { p, skills: skills.map((s) => [s, new RegExp(`[^a-z0-9]${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^a-z0-9]`)]), themes: Object.keys(MY_THEMES).filter((t) => MY_THEMES[t].test(text)) };
   }
   const me = state.myHackProfile;
   const text = ` ${h.title} ${(h.tags || []).join(' ')} ${h.rewards || ''} `.toLowerCase();
-  const hits = me.skills.filter((s) => new RegExp(`[^a-z0-9]${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^a-z0-9]`).test(text)).slice(0, 3);
+  const hits = me.skills.filter(([, re]) => re.test(text)).map(([s]) => s).slice(0, 3);
   const themes = (h.themes || []).filter((t) => me.themes.includes(t));
   const perks = h.perks || [];
   const days = h.deadline ? (new Date(h.deadline) - Date.now()) / 86400000 : 30;

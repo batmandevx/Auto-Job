@@ -16,7 +16,8 @@ if (process.argv.includes('--reports')) {
 }
 const chrome = spawn(CHROME, [...(process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []), '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/aj-suite-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let t; for (let i = 0; i < 50 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
+let t; for (let i = 0; i < 225 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
+if (!t) { console.log(`headless Chrome did not start within 45 s (${CHROME})`); chrome.kill(); process.exit(1); }
 const ws = new WebSocket(t.webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
 let id = 0; const w = new Map(); const errors = [];
 ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description?.split('\n')[0] || d.params.exceptionDetails.text); if (w.has(d.id)) { w.get(d.id)(d); w.delete(d.id); } };

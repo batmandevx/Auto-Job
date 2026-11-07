@@ -249,6 +249,7 @@ function experienceValue(field, profile) {
   const jobLabel = last.length <= 60 && !/ctc|cost to|salary|compensation/i.test(last) && /job\s*title|position\s*title|^title$|designation|^(current|most recent|previous|latest)?[\s/]*(most recent\s*)?(company|employer)(\s*name)?\W*$|currently work|role description/i.test(last);
   if (!EXP_SECTION.test(field.section || '') && !jobLabel) return undefined;
   if (/years|total|how many|months of/i.test(last)) return undefined;
+  if (field.roleIndex === -1) return undefined; // an extra entry on the page: none of your roles is left for it
   const e = profile.experience?.[field.roleIndex ?? (field.entry || 1) - 1];
   if (!e) return undefined;
   if (/currently work|current(ly)?\s*(employed|role|job)|i work here|still work/i.test(last)) return isPresent(e.end);
@@ -399,7 +400,7 @@ function assignRoles(fields, profile) {
   const byKey = new Map(), used = new Set();
   for (const p of pairs) if (!byKey.has(p.key) && !used.has(p.i)) { byKey.set(p.key, p.i); used.add(p.i); }
   const free = roles.map((_, i) => i).filter((i) => !used.has(i));
-  for (const [key] of [...entries].sort((a, b) => a[1].entry - b[1].entry)) if (!byKey.has(key) && free.length) byKey.set(key, free.shift());
+  for (const [key] of [...entries].sort((a, b) => a[1].entry - b[1].entry)) if (!byKey.has(key)) byKey.set(key, free.length ? free.shift() : -1);
   return fields.map((f) => (byKey.has(`${f.section}#${f.entry}`) ? { ...f, roleIndex: byKey.get(`${f.section}#${f.entry}`) } : f));
 }
 
@@ -412,6 +413,7 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
   const { answerBank = {}, ...forModel } = profile;
   for (const f of fields) {
     if (f.type === 'file') continue;
+    if (f.roleIndex === -1) continue; // an extra work entry: keep what the site has, never let the AI invent a role
     const err = errors[f.id];
     let v = err ? quickFix(f, err) : ruleValue(f, profile, job);
     if (err && v !== undefined) source[f.id] = 'auto-fix';

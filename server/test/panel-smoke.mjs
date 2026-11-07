@@ -16,7 +16,8 @@ fs.writeFileSync(path.join(dir, 'test.html'), fs.readFileSync(path.join(dir, 'si
 const PORT = 9339, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const c = spawn(CHROME, [...(process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []), '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${dir}/profile`, '--allow-file-access-from-files', 'about:blank'], { stdio: 'ignore' });
-let t; for (let i = 0; i < 75 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
+let t; for (let i = 0; i < 225 && !t; i++) { await sleep(200); t = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).then((l) => l.find((x) => x.type === 'page')).catch(() => null); }
+if (!t) { console.log(`PANEL: headless Chrome did not start within 45 s (${CHROME})`); c.kill(); process.exit(1); }
 const ws = new WebSocket(t.webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
 let id = 0; const w = new Map(); const errors = [];
 ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.method === 'Runtime.exceptionThrown') errors.push(`${d.params.exceptionDetails.exception?.description?.split('\n')[0] || d.params.exceptionDetails.text} (line ${d.params.exceptionDetails.lineNumber + 1})`); if (w.has(d.id)) { w.get(d.id)(d); w.delete(d.id); } };

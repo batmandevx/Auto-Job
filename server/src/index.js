@@ -316,6 +316,9 @@ for (const [kind, make] of [['followup', followUpDraft], ['prep', interviewPrep]
 // tracked applications move forward, and applications you didn't track are added from the emails about them.
 const DAY_MS = 86400_000;
 const TRACE_FILE = path.join(DATA_DIR, 'last-trace.json');
+// Emails of applications you deleted: never turned back into an application by the next mail check.
+const IGNORED_FILE = path.join(DATA_DIR, 'ignored-mail.json');
+const ignoredMail = () => { try { return JSON.parse(fs.readFileSync(IGNORED_FILE, 'utf8')); } catch { return []; } };
 let tracing = null;
 function runTrace({ apply = true, autoAdd = true, days } = {}) {
   tracing ||= (async () => {
@@ -323,7 +326,7 @@ function runTrace({ apply = true, autoAdd = true, days } = {}) {
     const window = Math.min(365, Math.max(7, Number(days) || Number(process.env.MAIL_SCAN_DAYS) || 90));
     const oldest = Math.min(Infinity, ...apps.map((a) => new Date(a.appliedAt || a.createdAt).getTime()).filter(Boolean));
     const since = Math.max(Math.min(Date.now() - window * DAY_MS, oldest - 2 * DAY_MS), Date.now() - 365 * DAY_MS);
-    const out = await traceOutcomes(apps, { since });
+    const out = await traceOutcomes(apps, { since, ignore: ignoredMail() });
     const applied = [];
     for (const u of out.updates) {
       const mail = { id: u.mailId, kind: u.kind, subject: u.subject, from: u.from, date: u.date, evidence: u.evidence };
@@ -363,6 +366,8 @@ app.patch('/api/applications/:id', (req, res) => {
   res.json(a);
 });
 app.delete('/api/applications/:id', (req, res) => {
+  const gone = listApplications().find((a) => a.id === req.params.id);
+  if (gone?.mail?.length) fs.writeFileSync(IGNORED_FILE, JSON.stringify([...new Set([...ignoredMail(), ...gone.mail.map((m) => m.id)])].slice(-5000)));
   deleteApplication(req.params.id);
   res.json({ ok: true });
 });

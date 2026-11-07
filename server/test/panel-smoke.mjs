@@ -26,6 +26,17 @@ await send('Page.navigate', { url: `file://${dir}/test.html` });
 await sleep(2500);
 const tabs = ['queue', 'hacks', 'tracker', 'profile', 'apply'];
 const opened = (await send('Runtime.evaluate', { expression: `JSON.stringify(${JSON.stringify(tabs)}.map((k) => { document.querySelector('[data-tab="' + k + '"]').click(); return getComputedStyle(document.getElementById('tab-' + k)).display !== 'none'; }))`, returnByValue: true })).result.result.value;
+// The tracker with a card that has an email timeline, and a Gmail result with added applications and recruiter mail.
+const traced = (await send('Runtime.evaluate', { expression: `(() => { try {
+  const mail = [{ id: 'm1', kind: 'applied', subject: 'Thanks for applying', date: '2026-09-01' }, { id: 'm2', kind: 'interview', subject: 'Interview invitation', date: '2026-09-10' }];
+  state.apps = [{ id: 'a1', company: 'Acme', title: 'Intern', status: 'interview1', appliedAt: '2026-09-01', createdAt: '2026-09-01', history: [], mail }];
+  renderTracker();
+  renderTrace({ scanned: 3000, checked: 300, jobEmails: 120, at: new Date().toISOString(), updates: [], unmatched: [], applied: [],
+    added: [{ appId: 'a1', company: 'Acme', title: 'Intern', status: 'interview1', mail: mail.map((m) => ({ ...m, mailId: m.id })) }],
+    outreach: [{ mailId: 'o1', kind: 'outreach', subject: 'A role for you', from: 'Recruiter', company: 'Beta', date: '2026-09-12' }] });
+  return [!!document.querySelector('.app-timeline'), /Added from your mail/.test(document.getElementById('traceOut').innerText), /Recruiters writing to you/.test(document.getElementById('traceOut').innerText)].join(',');
+} catch (e) { return 'error ' + e.message; } })()`, returnByValue: true })).result.result.value;
+if (traced !== 'true,true,true') errors.push(`tracker / Gmail result didn't render: ${traced}`);
 ws.close(); c.kill();
 const ok = JSON.parse(opened || '[]');
 const bad = tabs.filter((_, i) => !ok[i]);

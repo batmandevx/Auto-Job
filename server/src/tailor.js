@@ -34,7 +34,7 @@ function pickBullets(source, choice, max) {
   return out.length ? out : source.bullets;
 }
 
-export async function tailorResume(resume, sourceText, job, { fillGaps = false } = {}) {
+export async function tailorResume(resume, sourceText, job, { fillGaps = false, fixThese = null, previous = null } = {}) {
   const indexed = {
     ...resume,
     experience: (resume.experience || []).map((e, index) => ({ index, ...e, bullets: e.bullets.map((text, b) => ({ b, text })) })),
@@ -42,13 +42,30 @@ export async function tailorResume(resume, sourceText, job, { fillGaps = false }
   };
   const profileText = `${sourceText}\n${JSON.stringify(resume)}`;
   const preMatched = profileSkillsInJD(resume, job.description);
+  // A fix-up pass revises the previous outline instead of starting over (facts stay fixed; presentation improves).
+  const previousOutline = previous
+    ? {
+      headline: previous.headline,
+      summary: previous.summary,
+      skills: (previous.skills || []).map((s) => `${s.category}: ${(s.items || []).join(', ')}`),
+      experience: (previous.experience || []).map((e, i) => `role ${i} (${e.title} @ ${e.company}):\n${(e.bullets || []).map((b) => `- ${b}`).join('\n')}`),
+      projects: (previous.projects || []).map((p, i) => `project ${i} (${p.name}):\n${(p.bullets || []).map((b) => `- ${b}`).join('\n')}`),
+    }
+    : undefined;
   const out = await chatJSON(
     TAILOR_SYSTEM,
-    JSON.stringify({ RESUME: indexed, KEYWORDS_YOU_HAVE: preMatched, JOB: { title: job.title, company: job.company, description: job.description.slice(0, 15000) } }),
+    JSON.stringify({
+      RESUME: indexed,
+      KEYWORDS_YOU_HAVE: preMatched,
+      JOB: { title: job.title, company: job.company, description: job.description.slice(0, 15000) },
+      ...(fixThese?.length ? { PREVIOUS_OUTLINE: previousOutline, FIX_THESE: fixThese } : {}),
+    }),
     { temperature: 0.3, heavy: true },
   );
 
   const haystack = profileText.toLowerCase();
+  // Whole-word matching against the profile, so "Perl" can't sneak in via "hyperlinks" or "EDA" via a project name.
+  const inProfile = makeMatcher(profileText);
   const notes = [];
 
   // Every role stays, in its original order; only its bullets are chosen / reworded.
@@ -62,9 +79,9 @@ export async function tailorResume(resume, sourceText, job, { fillGaps = false }
     .slice(0, 3)
     .map(({ c, p }) => ({ ...p, bullets: pickBullets({ ...p, bullets: p.bullets || [] }, c, 3) }));
 
-  // Skills: only ones the candidate actually listed.
+  // Skills: only ones the candidate actually listed (whole-word).
   let skills = (out.skills || [])
-    .map((s) => ({ category: String(s.category || ''), items: (s.items || []).filter((x) => typeof x === 'string' && haystack.includes(x.toLowerCase())) }))
+    .map((s) => ({ category: String(s.category || ''), items: (s.items || []).filter((x) => typeof x === 'string' && inProfile(x)) }))
     .filter((s) => s.items.length);
   if (!skills.length) skills = resume.skills;
 
@@ -87,31 +104,80 @@ export async function tailorResume(resume, sourceText, job, { fillGaps = false }
     skills = groupSkills(keyItems, extra.slice(0, 18));
   }
 
-  // Headline / summary may not introduce numbers that aren't in the resume.
+  // Headline / summary may not introduce numbers the resume doesn't have, nor claim the job's skills
+  // the profile doesn't back: a far-from-profile job tempts models to bluff ("deep foundations in
+  // digital logic design" on a resume that never mentions it). Bluffing is rejected here — the honest
+  // original summary is used instead, then augmented with the keywords you genuinely have below.
   const noNewNumbers = (t) => typeof t === 'string' && t.trim() && numbers(t).every((n) => haystack.includes(n));
-  const summary = noNewNumbers(out.summary) ? out.summary.trim() : resume.summary;
-  const headline = noNewNumbers(out.headline) ? out.headline.trim() : resume.headline;
-  if (summary === resume.summary && out.summary) notes.push('Kept your original summary (the AI version added facts).');
+  const aiText = `${out.summary || ''} ${out.headline || ''}`;
+  const bluffTerms = [...new Set([...(out.jdKeywords || []), ...techTermsInJD(job.description)])]
+    .filter((t) => !inProfile(t) && makeMatcher(aiText)(t));
+  const summaryOk = noNewNumbers(out.summary) && !bluffTerms.length;
+  const summary = summaryOk ? out.summary.trim() : resume.summary;
+  const headline = noNewNumbers(out.headline) && !bluffTerms.length ? out.headline.trim() : resume.headline;
+  if (!summaryOk && out.summary) notes.push(`Kept your original summary (the AI version claimed skills your resume doesn't back: ${bluffTerms.slice(0, 4).join(', ')}).`);
+  if (summary === resume.summary && out.summary && bluffTerms.length === 0) notes.push('Kept your original summary (the AI version added facts).');
 
   // Alignment with the posting: the headline names the exact role (what recruiters and ATS search for),
   // and the summary carries the top keywords you have.
   const role = cleanRole(job.title);
   let finalHeadline = headline;
   if (role && !norm(headline).includes(norm(role))) {
-    // Keep the AI's focus skills (it picks the job's core ones); otherwise the job's own top keywords.
-    const aiFocus = String(headline || '').split('|').slice(1).map((x) => x.trim()).filter((x) => x && x.length <= 40);
+    // Keep the AI's focus skills (it picks the job's core ones) — only ones your resume backs;
+    // otherwise the job's own top keywords you genuinely have.
+    const aiFocus = String(headline || '').split('|').slice(1).map((x) => x.trim()).filter((x) => x && x.length <= 40 && inProfile(x));
     const focus = aiFocus.length ? aiFocus.slice(0, 3) : matched.filter((k) => k.length <= 20 && !/^(python|sql|git|java)$/i.test(k)).slice(0, 3);
     finalHeadline = [role, ...focus].join(' | ');
   }
   let finalSummary = summary;
   const inSummary = makeMatcher(summary || '');
   const notInSummary = matched.filter((k) => !inSummary(k)).slice(0, Math.max(0, 6 - matched.filter(inSummary).length));
-  if (notInSummary.length) finalSummary = `${(summary || '').trim().replace(/\.?$/, '.')} Hands-on with ${listJoin(notInSummary)}.`;
+  const wordCount = (t) => String(t).split(/\s+/).filter(Boolean).length;
+  // The Skills section already carries every keyword verbatim, so the summary addition is belt-and-braces:
+  // add it only while the summary stays a 6-second read.
+  if (notInSummary.length && wordCount(finalSummary) < 80) finalSummary = `${(summary || '').trim().replace(/\.?$/, '.')} Hands-on with ${listJoin(notInSummary)}.`;
 
   finalSummary = crisp(finalSummary);
-  // You asked for no graduation-year talk: drop any summary sentence about it (the Education section keeps the dates).
-  const noGrad = withoutGradSentences(finalSummary);
-  if (noGrad.length > 60) finalSummary = noGrad;
+  // Graduation talk: hidden for full-time roles (the standing rule). For internships, enrollment IS the
+  // qualification ("intent to return to degree program"), so keep it — and make sure it is stated.
+  if (!isInternship(job)) {
+    const noGrad = withoutGradSentences(finalSummary);
+    if (noGrad.length > 60) finalSummary = noGrad;
+  } else {
+    // Spell out degree abbreviations ("B.Tech in CSE" -> "Bachelor of Technology in Computer Science and
+    // Engineering"): screener bots must be able to verify "Bachelor's degree in an engineering field".
+    finalSummary = finalSummary.replace(/\bB\.?\s*Tech\b\.?/gi, 'Bachelor of Technology').replace(/\bCSE\b/g, 'Computer Science and Engineering');
+    const edu = resume.education?.[0] || {};
+    const fieldCore = String(edu.field || '').split('(')[0].trim();
+    const degreeFull = degreeName([edu.degree, fieldCore].filter(Boolean).join(' in ')) || 'a degree';
+    // The full field name ("...Engineering") must be verifiable in the summary itself, not just the
+    // Education section: screeners read the summary first, and models paraphrase the field away.
+    const fieldShown = fieldCore && norm(finalSummary).includes(norm(fieldCore));
+    if (!/pursuing|enrolled|expected to (graduate|complete)|return to|undergraduate|class of 20\d\d/i.test(finalSummary)) {
+      // Enrollment + degree name + return intent, all in one canonical sentence.
+      if (edu.end) {
+        const sentences = finalSummary.split(/(?<=[.!?])\s+/);
+        while (sentences.length > 3 && wordCount(sentences.join(' ')) > 70) sentences.splice(sentences.length - 2, 1);
+        finalSummary = `${sentences.join(' ')} Currently pursuing ${degreeFull}, and will return to the degree program after the internship to complete it in ${edu.end}.`;
+      }
+    } else if (!fieldShown) {
+      // Enrolled, but the model paraphrased the field ("Computer Science (AI & ML)") and lost "Engineering".
+      const sentences = finalSummary.split(/(?<=[.!?])\s+/);
+      while (sentences.length > 3 && wordCount(sentences.join(' ')) > 78) sentences.splice(sentences.length - 2, 1);
+      finalSummary = `${sentences.join(' ')} Pursuing ${degreeFull}${edu.end ? `, and will return to the degree program after the internship to complete it in ${edu.end}` : ''}.`;
+    } else if (!/\breturn\b/i.test(finalSummary)) {
+      // Enrolled and the degree is spelled out, but the return itself is not stated yet.
+      const sentences = finalSummary.split(/(?<=[.!?])\s+/);
+      while (sentences.length > 3 && wordCount(sentences.join(' ')) > 84) sentences.splice(sentences.length - 2, 1);
+      finalSummary = `${sentences.join(' ')} Will return to the degree program after the internship to complete it${edu.end ? ` in ${edu.end}` : ''}.`;
+    }
+    // Recruiters skim: hard-cap the summary even if that drops a keyword sentence (the Skills block has them all).
+    const sentences = finalSummary.split(/(?<=[.!?])\s+/);
+    while (wordCount(finalSummary) > 95 && sentences.length > 3) {
+      sentences.splice(sentences.length - 2, 1); // drop the least central sentence, keep the closing one
+      finalSummary = sentences.join(' ');
+    }
+  }
 
   // Optional: list the job keywords you don't have yet on an honest "Familiar with / learning" line, so keyword
   // filters see 100% coverage without any bullet, number or employer claiming experience you don't have.
@@ -135,8 +201,29 @@ export async function tailorResume(resume, sourceText, job, { fillGaps = false }
   };
 }
 
-// "Software Development Engineer I – Payments (Remote)" -> "Software Development Engineer I"
-// "Intern - Bachelors - AI Engineering" -> "AI Engineering Intern"
+// Deterministic quality gate for a tailored resume: what would make an ATS filter or a recruiter pass on it.
+// Returns short problem notes; when non-empty, /api/tailor runs one fix-up pass with these spelled out.
+export function tailorProblems(out, source) {
+  const problems = [];
+  const { resume, keywords } = out;
+  const text = `${resume.headline || ''} ${resume.summary || ''}`.toLowerCase();
+  const hay = norm(text);
+  const top = (keywords?.covered || []).slice(0, 8);
+  const missing = top.filter((k) => !hay.includes(norm(k)));
+  if (missing.length >= 4) problems.push(`work ${missing.length} of the job's top keywords into the headline or summary verbatim: ${missing.slice(0, 5).join(', ')}`);
+  const words = String(resume.summary || '').split(/\s+/).filter(Boolean).length;
+  if (words && (words < 40 || words > 95)) problems.push(`summary is ${words} words: rewrite it at 50-85 words in 3 sentences`);
+  const total = (keywords?.covered?.length || 0) + (keywords?.missing?.length || 0);
+  if (total >= 8 && keywords.covered.length / total < 0.5) problems.push(`only ${keywords.covered.length} of ${total} job keywords are genuinely covered: choose closer-matching bullets and name the job's tools where the original work used them`);
+  const noNumbers = (resume.experience || [])
+    .map((e, i) => ({ e, src: source?.experience?.[i] }))
+    .filter(({ e, src }) => e.bullets?.length && !e.bullets.some((b) => /\d/.test(b)) && (src?.bullets || []).some((b) => /\d/.test(b)))
+    .map(({ e }) => String(e.company || e.title).split(',')[0]);
+  if (noNumbers.length) problems.push(`these roles lost every real number even though the originals have some (keep each bullet's metric): ${noNumbers.join(', ')}`);
+  return problems;
+}
+
+// "Software Development Engineer I – Payments (Remote)" -> "Software Development Engineer I"// "Intern - Bachelors - AI Engineering" -> "AI Engineering Intern"
 const NOT_ROLE = /^(bachelors?|masters?|b\.?\s*tech|m\.?\s*tech|graduate|undergrad\w*|post\s*grad\w*|campus|fresher|freshers|20\d\d|full[- ]?time|part[- ]?time|remote|hybrid|on[- ]?site|india|[a-z]+,\s*india|job\s*id.*|req.*|\d+)$/i;
 export function cleanRole(title) {
   const parts = String(title || '').replace(/\s*[([].*?[)\]]\s*/g, ' ').split(/\s[–—|-]\s|,|\s\/\s/).map((x) => x.replace(/\s+/g, ' ').trim()).filter((x) => x && !NOT_ROLE.test(x));
@@ -192,3 +279,16 @@ export const withoutGradSentences = (text) =>
     .filter((x) => !/\b(graduat\w*|class of \d{4}|batch of \d{4}|final[- ]year)\b/i.test(x))
     .join(' ')
     .trim();
+
+// Internships screen FOR enrollment: "intent to return to degree program" is a qualification, so the
+// no-grad-talk rule must not apply to them. Full-time roles keep hiding graduation timing.
+export const isInternship = (job) => /\bintern(ship)?\b/i.test(String(job?.title || ''));
+
+// "B.Tech" -> "Bachelor of Technology (B.Tech)": ATS screeners at US companies may not expand Indian
+// degree abbreviations, and "Bachelor's degree in an engineering field" must be verifiable on the page.
+export const degreeName = (d) =>
+  String(d || '')
+    .replace(/\bB\.?\s*Tech\b\.?/i, 'Bachelor of Technology (B.Tech)')
+    .replace(/\bM\.?\s*Tech\b\.?/i, 'Master of Technology (M.Tech)')
+    .replace(/\bB\.?\s*E\b\.?/i, 'Bachelor of Engineering (B.E.)')
+    .replace(/\bM\.?\s*E\b\.?/i, 'Master of Engineering (M.E.)');

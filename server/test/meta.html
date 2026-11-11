@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ASIC Engineer Intern, Design Verification – Meta-style test</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "JobPosting",
+    "title": "ASIC Engineer Intern, Design Verification",
+    "hiringOrganization": { "@type": "Organization", "name": "Meta" },
+    "jobLocation": { "@type": "Place", "address": { "addressLocality": "Chennai", "addressRegion": "Tamil Nadu", "addressCountry": "IN" } },
+    "description": "<p>Meta is looking for an ASIC Engineer Intern to join our design verification team in Chennai.</p><ul><li>Write SystemVerilog testbenches and assertions</li><li>Build UVM-based verification environments</li><li>Run regression coverage and debug failures</li></ul>"
+  }
+  </script>
+  <style>
+    body { font: 15px system-ui; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; border-top: 1px solid #ddd; padding-top: 16px; } h3 { font-size: 14px; }
+    label.field { display: block; margin-top: 12px; font-weight: 600; }
+    .hint { font-size: 12px; color: #666; margin: 2px 0; }
+    .req { color: #c00; }
+    input[type="text"], input[type="email"], input[type="password"], input[type="file"] { padding: 8px; width: 100%; max-width: 420px; box-sizing: border-box; }
+    .ef { position: relative; max-width: 420px; }
+    .ef input[role="combobox"] { padding: 8px; width: 100%; box-sizing: border-box; }
+    .ef .efl { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #aaa; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,.15); }
+    .ef .efl [role="option"] { padding: 7px 10px; cursor: pointer; }
+    .ef .efl [role="option"].active, .ef .efl [role="option"]:hover { background: #e8f0fe; }
+    .ef .efm { font-size: 12px; color: #666; }
+    .phone-row { display: flex; gap: 8px; max-width: 420px; }
+    .phone-row .ef { width: 150px; flex: none; }
+    .phone-row input[type="text"] { flex: 1; }
+    .err { color: #c00; font-size: 12px; }
+    .selfid p { font-size: 13px; color: #444; }
+    .checks label { display: block; margin-top: 8px; font-weight: 400; }
+    fieldset { border: 0; padding: 0; margin: 8px 0 0; }
+    .actions { margin: 28px 0; }
+    button { padding: 10px 22px; margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h1>ASIC Engineer Intern, Design Verification</h1>
+
+  <section>
+    <h2>Resume upload</h2>
+    <label class="field" for="resume">Upload your resume from your device</label>
+    <input type="file" id="resume" />
+    <p class="hint">Acceptable formats are .docx or .pdf with a maximum file size of 2MB.</p>
+  </section>
+
+  <section>
+    <h2>Your information</h2>
+    <label class="field" for="fn">First name <span class="req">*</span></label><input type="text" id="fn" />
+    <label class="field" for="ln">Last name <span class="req">*</span></label><input type="text" id="ln" />
+    <label class="field" for="loc">Current location <span class="req">*</span></label><input type="text" id="loc" value="Chennai, Tamil Nadu, India" />
+    <label class="field" for="em">Email <span class="req">*</span></label><input type="email" id="em" />
+    <label class="field" id="lbl-code" for="code">Code</label>
+    <div class="phone-row">
+      <div class="ef"><input id="code" role="combobox" aria-labelledby="lbl-code" readonly placeholder="+1" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+      <input type="text" id="ph" aria-label="Phone number" value="09305183418" />
+    </div>
+    <label class="field" for="web">Website (Examples: LinkedIn, GitHub, portfolio)</label><input type="text" id="web" />
+  </section>
+
+  <section class="selfid">
+    <h2>Self ID</h2>
+    <h3>Gender</h3>
+    <p>We invite you to self-identify your gender. Please note that completing this question is optional and voluntary.</p>
+    <fieldset>
+      <legend class="field">Indicate your gender:</legend>
+      <div class="checks">
+        <label><input type="radio" name="gender" value="Male" /> Male</label>
+        <label><input type="radio" name="gender" value="Female" /> Female</label>
+        <label><input type="radio" name="gender" value="I choose not to disclose" /> I choose not to disclose</label>
+      </div>
+    </fieldset>
+    <h3>Disability</h3>
+    <p>Applicable for: India</p>
+    <p>We invite you to self-identify whether you have a disability. Please note that completing this question is optional and voluntary.</p>
+    <p>Please select an option:</p>
+    <fieldset>
+      <legend class="field">Disability</legend>
+      <div class="checks">
+        <label><input type="radio" name="disability" value="Yes, I have a disability, or have had one in the past" /> Yes, I have a disability, or have had one in the past</label>
+        <label><input type="radio" name="disability" value="No, I do not have a disability and have not had one in the past" /> No, I do not have a disability and have not had one in the past</label>
+        <label><input type="radio" name="disability" value="I do not want to answer" /> I do not want to answer</label>
+      </div>
+    </fieldset>
+  </section>
+
+  <section>
+    <h2>Create a Career Profile account (optional)</h2>
+    <p>With an account, you can track your applications, get personalized job recommendations, prepare for interviews and more.</p>
+    <label class="field" for="pw">Password</label><input type="password" id="pw" />
+    <label class="field" for="pw2">Confirm password</label><input type="password" id="pw2" />
+  </section>
+
+  <div class="actions">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="button" id="submit">Submit application</button>
+  </div>
+  <div id="formerr" class="err"></div>
+
+  <script>
+    // Meta-style phone-code dropdown: a click-to-open combobox listing country codes.
+    const build = (input, options) => {
+      const box = input.closest('.ef');
+      const list = box.querySelector('.efl');
+      const count = box.querySelector('.efm');
+      list.innerHTML = options.map((o) => `<div role="option" tabindex="-1">${o}</div>`).join('');
+      const rows = [...list.children];
+      const announce = () => { count.textContent = `${rows.filter((r) => !r.hidden).length} matches found.`; };
+      const open = () => { list.hidden = false; input.setAttribute('aria-expanded', 'true'); announce(); };
+      const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); rows.forEach((r) => r.classList.remove('active')); };
+      input.addEventListener('focus', open);
+      input.addEventListener('click', open);
+      input.addEventListener('keyup', (e) => {
+        if (e.key === 'Escape') return close();
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const vis = rows.filter((r) => !r.hidden);
+          if (!vis.length) return;
+          const cur = vis.findIndex((r) => r.classList.contains('active'));
+          vis.forEach((r) => r.classList.remove('active'));
+          const next = e.key === 'ArrowDown' ? (cur + 1) % vis.length : (cur - 1 + vis.length) % vis.length;
+          vis[next].classList.add('active');
+          return;
+        }
+        if (e.key === 'Enter') {
+          const act = rows.filter((r) => !r.hidden).find((r) => r.classList.contains('active'));
+          if (act) { input.value = act.textContent; close(); }
+        }
+      });
+      rows.forEach((r) => {
+        r.addEventListener('mousedown', (e) => e.preventDefault());
+        r.addEventListener('click', () => { input.value = r.textContent; close(); });
+      });
+      return { open, close };
+    };
+    build(document.getElementById('code'), ['United States +1', 'United Kingdom +44', 'India +91', 'Singapore +65', 'United Arab Emirates +971', 'Australia +61', 'Germany +49', 'Brazil +55', 'Japan +81', 'South Africa +27']);
+    const val = (id) => document.getElementById(id).value.trim();
+    window.report = () => ({
+      resume: document.getElementById('resume').files.length,
+      fn: val('fn'), ln: val('ln'), loc: val('loc'), em: val('em'), code: val('code'), ph: val('ph'), web: val('web'),
+      gender: document.querySelector('input[name="gender"]:checked')?.value,
+      disability: document.querySelector('input[name="disability"]:checked')?.value,
+      pw: document.getElementById('pw').value, pw2: document.getElementById('pw2').value,
+    });
+    document.getElementById('submit').addEventListener('click', () => {
+      const need = ['fn', 'ln', 'loc', 'em', 'code', 'ph'];
+      document.getElementById('formerr').textContent = need.filter((id) => !val(id)).length
+        ? 'Please fill out all required fields.' : '';
+    });
+  </script>
+</body>
+</html>

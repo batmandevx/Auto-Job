@@ -310,6 +310,7 @@ async function tailor() {
   state.resume = { ...out, key: jobKey() };
   $('#tailorOut').innerHTML = `
     <div class="score-card">${scoreRing(out.matchScore)}<div><b>Match with this job</b><div class="hint">one-page resume, built from your real experience</div>${docLink(out.pdfBase64, out.filename, 'Open tailored resume')}</div></div>
+    ${out.ats ? `<div class="hint">${out.ats.ok ? '✅ ATS check passed: a parser reads the PDF cleanly — contact details and ' + out.ats.chars + ' characters of text extract properly' : `⚠️ ATS check: ${out.ats.problems.map(esc).join(' · ')}`}</div>` : ''}
     ${keywordBlock(out.keywords)}
     <details><summary class="hint">What changed (${out.changes.length})</summary><ul>${out.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></details>`;
   animateRings();
@@ -1294,13 +1295,22 @@ const DEFAULT_BOARDS = [
   { name: 'EngineerHub Jobs', url: 'https://www.engineerhub.in/career/jobs' },
   { name: 'Debug with Shubham', url: 'https://debugwithshubham.com/jobs' },
   { name: 'Crack Off-Campus', url: 'https://www.crackoffcampus.com/jobs' },
+  // Fetched by the server (github.com/zapplyjobs/Internships-2027), not scraped from a tab.
+  { name: 'Internships 2027 (zapply)', api: '/api/internships' },
 ];
 let BOARDS = DEFAULT_BOARDS;
 
 function renderBoards() {
-  $('#boards').innerHTML = BOARDS.map((b, i) => `<span class="board-chip"><button class="board" data-b="${i}" title="${esc(b.url)}">${esc(b.name)}</button>${i >= DEFAULT_BOARDS.length ? `<button class="board-x" data-x="${i}" title="Remove">×</button>` : ''}</span>`).join('');
+  $('#boards').innerHTML = BOARDS.map((b, i) => `<span class="board-chip"><button class="board" data-b="${i}" title="${esc(b.url || b.api)}">${esc(b.name)}</button>${i >= DEFAULT_BOARDS.length ? `<button class="board-x" data-x="${i}" title="Remove">×</button>` : ''}</span>`).join('');
 }
 const saveBoards = () => chrome.storage.local.set({ boards: BOARDS.slice(DEFAULT_BOARDS.length) });
+
+// A server-fed board (no tab scraping): the server parses the list, the panel merges it like any board.
+async function scanApiBoard(b) {
+  const r = await api(b.api).catch(() => null);
+  if (r?.jobs?.length) mergeJobs(r.jobs, b.name);
+  return r?.jobs?.length || 0;
+}
 
 // The job list survives closing the panel.
 // Not before the saved list has loaded, or an early render would overwrite it with [].
@@ -1316,6 +1326,12 @@ async function scanAllBoards() {
   const tab = await browserTab();
   for (const [i, b] of BOARDS.entries()) {
     $('#queueOut').textContent = `Scanning ${i + 1}/${BOARDS.length}: ${b.name}…`;
+    if (b.api) {
+      // Server-fed board: no tab needed.
+      await scanApiBoard(b);
+      renderJobs();
+      continue;
+    }
     await chrome.tabs.update(tab.id, { url: b.url });
     await waitForLoad(tab.id);
     await sleep(1500); // most boards render their list with JavaScript
@@ -1331,7 +1347,7 @@ async function scanBoard() {
   const tab = await activeTab();
   const frames = await callAll(tab.id, 'collectJobLinks');
   const before = state.boardJobs.length;
-  const board = BOARDS.find((b) => tab.url.startsWith(b.url.replace(/\/$/, '')));
+  const board = BOARDS.find((b) => b.url && tab.url.startsWith(b.url.replace(/\/$/, '')));
   mergeJobs(frames.flatMap((f) => f.result), board?.name || new URL(tab.url).hostname.replace(/^www\./, ''));
   renderJobs();
   toast(`Added ${state.boardJobs.length - before} new jobs (${state.boardJobs.length} in your list)`);
@@ -1481,6 +1497,18 @@ async function loadTracker() {
   state.apps = (Array.isArray(r) ? r : r.items || []).filter((a) => a.id); // older servers return a plain list without ids
   renderTracker();
   renderJobs();
+  renderGaps(await api('/api/upskill').catch(() => null));
+}
+
+// Skill-gap heatmap: missing keywords aggregated across every tailored job (server journal).
+async function renderGaps(r) {
+  if (!r || !r.jobs) return ($('#gapsOut').innerHTML = '<p class="hint">Tailor a resume for a job and the keywords it asked for (that you do not have yet) show up here.</p>');
+  $('#gapsMeta').textContent = `${r.jobs} job${r.jobs > 1 ? 's' : ''} tracked`;
+  $('#gapsOut').innerHTML =
+    (r.gaps.length
+      ? `<div>${r.gaps.slice(0, 12).map((g) => `<span class="chip miss" title="Asked by: ${esc(g.jobs.join(', '))}">${esc(g.term)} <b>×${g.jobs.length}</b></span>`).join('')}</div>`
+      : '<p class="hint">No gaps recorded — every job you tailored for was fully covered.</p>') +
+    `<button id="upskillPlan" class="btn ghost sm" style="margin-top:8px" ${r.gaps.length ? '' : 'disabled'}>🎓 Build a 6-week learning plan</button><div id="upskillOut"></div>`;
 }
 
 function renderTracker() {
@@ -1608,9 +1636,16 @@ function renderTrace(r) {
   const added = new Set((state.apps || []).flatMap((a) => (a.mail || []).map((m) => m.id)));
   const untracked = (r.unmatched || []).filter((u) => !added.has(u.mailId));
   $('#traceMeta').textContent = r.scanned ? `${r.scanned} emails read · ${r.jobEmails} about your job search · ${ago(r.at || Date.now())}` : `${r.checked} emails checked · ${ago(Date.now())}`;
+  // Cumulative picture of your whole search: total tracked, each stage, and who's still silent.
+  const appsNow = state.apps || [];
+  const tally = (f) => appsNow.filter(f).length;
+  const summary = appsNow.length
+    ? `<p class="hint"><b>${appsNow.length} applications tracked</b> · 📨 ${tally((a) => a.status === 'applied')} applied · 🧪 ${tally((a) => a.status === 'assessment')} assessment · 🎙 ${tally((a) => /^(interview|hr)/.test(a.status))} interview · 🎉 ${tally((a) => ['offer', 'accepted'].includes(a.status))} offer · ✖ ${tally((a) => a.status === 'rejected')} rejected · ☆ ${tally((a) => a.status === 'saved')} to apply · 👀 ${tally((a) => a.status === 'applied' && !(a.mail || []).length)} awaiting reply</p>`
+    : '';
   const addedApps = (r.added || []).filter((u) => (state.apps || []).some((a) => a.id === u.appId));
   const outreach = r.outreach || [];
   $('#traceOut').innerHTML = [
+    summary,
     addedApps.length ? `<div class="page">Added from your mail (${addedApps.length})</div>${addedApps.map((u) => row({ ...u, kind: u.mail.at(-1)?.kind || 'applied', evidence: u.mail.at(-1)?.evidence, subject: u.mail.at(-1)?.subject || '', date: u.mail.at(-1)?.date, title: `${u.title ? `${u.title} · ` : ''}${u.mail.length} email${u.mail.length > 1 ? 's' : ''}` }, `<button class="btn ghost sm" data-unadd="${esc(u.appId)}">Remove</button>`)).join('')}` : '',
     applied.length ? `<div class="page">Updated (${applied.length})</div>${applied.map((u) => row({ ...u, title: `${STATUS[u.from_status]?.label || u.from_status} → ${STATUS[u.to_status]?.label || u.to_status}` }, `<button class="btn ghost sm" data-undo="${esc(u.appId)}" data-to="${esc(u.from_status)}">Undo</button>`)).join('')}` : '',
     pending.length ? `<div class="page">Check these (${pending.length})</div>${pending.map((u) => row(u, `<button class="btn ghost sm" data-confirm="${esc(u.appId)}" data-to="${esc(u.to_status)}" data-mail="${esc(u.mailId)}">Apply</button>`)).join('')}` : '',
@@ -2003,6 +2038,73 @@ $('#viewWellfound').addEventListener('click', async () => {
   pre.hidden = !pre.hidden;
   $('#viewWellfound').textContent = pre.hidden ? 'View' : 'Hide';
 });
+
+// LinkedIn Easy Apply script: same convention (your own *.local.js copy wins), with the placeholder fields
+// filled from your profile. The answers map (regexes) is kept intact — only the personal fields are replaced.
+function fillContactPlaceholders(code, p) {
+  return code
+    .replace(/name: 'YOUR FULL NAME'/, `name: ${JSON.stringify(p.name)}`)
+    .replace(/email: 'YOUR EMAIL'/, `email: ${JSON.stringify(p.email)}`)
+    .replace(/phone: 'YOUR PHONE WITH COUNTRY CODE'/, `phone: ${JSON.stringify(p.phone)}`)
+    .replace(/city: 'YOUR CITY'/, `city: ${JSON.stringify(p.answers?.currentLocation || p.location || p.personal?.city || '')}`)
+    .replace(/Portfolio: 'https:\/\/YOUR-PORTFOLIO\.example'/, `Portfolio: ${JSON.stringify(p.links?.portfolio || '')}`)
+    .replace(/GitHub: 'https:\/\/github\.com\/YOUR-USERNAME'/, `GitHub: ${JSON.stringify(p.links?.github || '')}`)
+    .replace(/LinkedIn: 'https:\/\/www\.linkedin\.com\/in\/YOUR-PROFILE'/, `LinkedIn: ${JSON.stringify(p.links?.linkedin || '')}`);
+}
+async function linkedinScript() {
+  const own = await fetch(chrome.runtime.getURL('scripts/linkedin-autoapply.local.js')).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+  if (own.trim()) return { code: own, source: 'your own copy' };
+  const code = await loadScript('linkedin-autoapply.js');
+  const p = state.profile;
+  if (!p?.name) return { code, source: 'template: fill in YOUR DETAILS before running it' };
+  return { code: fillContactPlaceholders(code, p), source: 'template, filled from your profile' };
+}
+on('#copyLinkedin', async () => {
+  const { code, source } = await linkedinScript();
+  await navigator.clipboard.writeText(code);
+  const btn = $('#copyLinkedin');
+  btn.classList.add('copied');
+  btn.querySelector('span').textContent = 'Copied ✓';
+  toast(`Script copied (${source}). Paste it into the LinkedIn console.`);
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    btn.querySelector('span').textContent = 'Copy script';
+  }, 2500);
+});
+$('#viewLinkedin').addEventListener('click', async () => {
+  const pre = $('#linkedinCode');
+  if (pre.hidden && !pre.textContent) pre.textContent = (await linkedinScript()).code;
+  pre.hidden = !pre.hidden;
+  $('#viewLinkedin').textContent = pre.hidden ? 'View' : 'Hide';
+});
+
+// Naukri auto-apply script: same convention (own *.local.js copy wins; placeholders filled from the profile).
+async function naukriScript() {
+  const own = await fetch(chrome.runtime.getURL('scripts/naukri-autoapply.local.js')).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+  if (own.trim()) return { code: own, source: 'your own copy' };
+  const code = await loadScript('naukri-autoapply.js');
+  const p = state.profile;
+  if (!p?.name) return { code, source: 'template: fill in YOUR DETAILS before running it' };
+  return { code: fillContactPlaceholders(code, p), source: 'template, filled from your profile' };
+}
+on('#copyNaukri', async () => {
+  const { code, source } = await naukriScript();
+  await navigator.clipboard.writeText(code);
+  const btn = $('#copyNaukri');
+  btn.classList.add('copied');
+  btn.querySelector('span').textContent = 'Copied ✓';
+  toast(`Script copied (${source}). Paste it into the Naukri console.`);
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    btn.querySelector('span').textContent = 'Copy script';
+  }, 2500);
+});
+$('#viewNaukri').addEventListener('click', async () => {
+  const pre = $('#naukriCode');
+  if (pre.hidden && !pre.textContent) pre.textContent = (await naukriScript()).code;
+  pre.hidden = !pre.hidden;
+  $('#viewNaukri').textContent = pre.hidden ? 'View' : 'Hide';
+});
 on('#selectAll', async () => {
   visibleJobs().forEach(({ j }) => (j.selected = !j.premium || $('#includePremium').checked)); // premium jobs need a premium login
   renderJobs();
@@ -2140,6 +2242,18 @@ $('#boards').addEventListener('click', async (e) => {
   }
   const b = BOARDS[e.target.dataset.b];
   if (!b) return;
+  if (b.api) {
+    // Server-fed board: merge its jobs straight into the list.
+    $('#queueOut').textContent = `Fetching ${b.name}…`;
+    await busy($('#scanBoard'), async () => {
+      const before = state.boardJobs.length;
+      await scanApiBoard(b);
+      renderJobs();
+      toast(`Added ${state.boardJobs.length - before} new jobs (${state.boardJobs.length} in your list)`);
+      $('#queueOut').textContent = `Found ${state.boardJobs.length} jobs. Filter, tick, then Start applying.`;
+    })().catch((err) => toast(err.message, true));
+    return;
+  }
   $('#boardUrl').value = b.url;
   await busy($('#openBoard'), openBoard)().catch(() => {});
 });
@@ -2205,6 +2319,49 @@ $('#bank').addEventListener('click', async (e) => {
   const p = await api('/api/profile');
   delete p.answerBank[key];
   renderProfile(await api('/api/profile', { method: 'PUT', body: p }));
+});
+
+// 🎓 Learning plan for the top skill gaps (button is re-rendered, so the listener is delegated on document).
+document.addEventListener('click', async (e) => {
+  if (e.target.id !== 'upskillPlan') return;
+  $('#upskillOut').innerHTML = '<p class="hint">Building your learning plan…</p>';
+  try {
+    const p = await api('/api/upskill', { method: 'POST', body: {} });
+    $('#upskillOut').innerHTML =
+      `<div class="page">Priorities</div>` +
+      (p.priorities || []).map((x) => `<div class="item"><div class="q">${esc(x.term)} <span class="src">${esc(x.demand || '')}</span></div><div class="v">${esc(x.why || '')}<span class="src">Learn: ${esc(x.learn || '')} · Proof: ${esc(x.proof || '')}</span></div></div>`).join('') +
+      `<div class="page">6-week plan</div>` +
+      (p.plan || []).map((w) => `<div class="item"><div class="q">Week ${w.week} · ${esc(w.focus || '')}</div><div class="v"><span class="src">${esc(w.hours || '')}</span></div></div>`).join('') +
+      `<p class="hint">${esc(p.note || '')}</p>`;
+  } catch (err) {
+    $('#upskillOut').innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+  }
+});
+
+// 🔎 GitHub scan: suggest skills from the repos in your GitHub link; each is added only on confirm.
+$('#expandScan').addEventListener('click', async () => {
+  $('#expandOut').innerHTML = '<p class="hint">Scanning your GitHub repos…</p>';
+  try {
+    const r = await api('/api/expand');
+    $('#expandOut').innerHTML = r.suggestions.length
+      ? `<p class="hint">${r.repos} repos scanned. Tap to add — only if it's true, it feeds your tailored resumes:</p>` +
+        r.suggestions.map((s) => `<button class="chip miss" data-addskill="${esc(s.skill)}" title="seen in ${esc(s.source)}">+ ${esc(s.skill)}</button>`).join('')
+      : '<p class="hint">Nothing new — the tools in your repos are already in your profile.</p>';
+  } catch (err) {
+    $('#expandOut').innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+  }
+});
+$('#expandOut').addEventListener('click', async (e) => {
+  const chip = e.target.closest('[data-addskill]');
+  if (!chip) return;
+  try {
+    await api('/api/profile/skills', { method: 'POST', body: { skill: chip.dataset.addskill } });
+    chip.classList.replace('miss', 'ok');
+    chip.textContent = `✓ ${chip.dataset.addskill}`;
+    toast(`Added “${chip.dataset.addskill}”`);
+  } catch (err) {
+    toast(err.message, true);
+  }
 });
 $('#jobFilter').addEventListener('input', renderJobs);
 $('#jobSort').addEventListener('change', renderJobs);

@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Software Engineer Intern – Eightfold-style test</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "JobPosting",
+    "title": "Software Engineer Intern",
+    "hiringOrganization": { "@type": "Organization", "name": "PayPal" },
+    "jobLocation": { "@type": "Place", "address": { "addressLocality": "Bangalore", "addressRegion": "Karnataka", "addressCountry": "IN" } },
+    "description": "<p>PayPal is looking for a Software Engineer Intern to join our payments team in Bangalore or Chennai.</p><ul><li>Build backend services in Java and Python</li><li>Work with SQL and NoSQL data stores</li><li>Write unit tests and take part in code reviews</li></ul>"
+  }
+  </script>
+  <style>
+    body { font: 15px system-ui; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; border-top: 1px solid #ddd; padding-top: 16px; } h3 { font-size: 14px; }
+    label.field { display: block; margin-top: 12px; font-weight: 600; }
+    .hint { font-size: 12px; color: #666; margin: 2px 0; }
+    .req { color: #c00; }
+    input[type="text"], input[type="email"], input[type="date"], input[type="file"] { padding: 8px; width: 100%; max-width: 420px; box-sizing: border-box; }
+    /* Eightfold-style custom select: a combobox input with a filtering listbox and an "N matches found" line. */
+    .ef { position: relative; max-width: 420px; }
+    .ef input[role="combobox"] { padding: 8px; width: 100%; box-sizing: border-box; }
+    .ef .efl { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #aaa; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,.15); }
+    .ef .efl [role="option"] { padding: 7px 10px; cursor: pointer; }
+    .ef .efl [role="option"].active, .ef .efl [role="option"]:hover { background: #e8f0fe; }
+    .ef .efm { font-size: 12px; color: #666; }
+    .err { color: #c00; font-size: 12px; }
+    .voluntary p { font-size: 13px; color: #444; }
+    .checks label { display: block; margin-top: 8px; font-weight: 400; }
+    .actions { margin: 28px 0; }
+    button { padding: 10px 22px; margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Application for<br />Software Engineer Intern</h1>
+  <p>Bangalore, Karnataka, India · Chennai, Tamil Nadu, India</p>
+
+  <section>
+    <h2>Resume</h2>
+    <label class="field" for="resume">Upload your resume <span class="req">*</span></label>
+    <input type="file" id="resume" />
+    <p class="hint">Accepted file format: .pdf, .doc, .docx, .txt</p>
+  </section>
+
+  <section>
+    <h2>Contact Information</h2>
+    <label class="field" for="fn">First Name <span class="req">*</span></label><input type="text" id="fn" />
+    <label class="field" for="ln">Last Name <span class="req">*</span></label><input type="text" id="ln" />
+    <label class="field" for="em">Email <span class="req">*</span></label><input type="email" id="em" />
+    <label class="field" id="lbl-cc" for="cc">Country Phone Code <span class="req">*</span></label>
+    <div class="ef"><input id="cc" role="combobox" aria-labelledby="lbl-cc" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+    <label class="field" for="ph">Phone <span class="req">*</span></label><input type="text" id="ph" />
+  </section>
+
+  <section>
+    <h2>Application questions</h2>
+    <h3>My Information</h3>
+    <label class="field" id="lbl-hear" for="hear">How did you hear about us? <span class="req">*</span></label>
+    <div class="ef"><input id="hear" role="combobox" aria-labelledby="lbl-hear" aria-autocomplete="list" placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-prev" for="prev">Are you a previous Employee of PayPal or any of its subsidiaries? <span class="req">*</span></label>
+    <div class="ef"><input id="prev" role="combobox" aria-labelledby="lbl-prev" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-country" for="country">Country <span class="req">*</span></label>
+    <div class="ef"><input id="country" role="combobox" aria-labelledby="lbl-country" aria-autocomplete="list" placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <h3>Legal Name</h3>
+    <label class="field" for="lgvn">Local Given Name(s)</label><input type="text" id="lgvn" />
+    <label class="field" for="lfam">Local Family Name</label><input type="text" id="lfam" />
+    <label class="field" for="gvn">Given Name(s) <span class="req">*</span></label><input type="text" id="gvn" />
+    <label class="field" for="fam">Family Name (Please enter full last name) <span class="req">*</span></label><input type="text" id="fam" />
+    <label class="checks" style="display:block;margin-top:10px;font-weight:400"><input type="checkbox" id="prefname" /> I have a preferred name</label>
+
+    <h3>Address</h3>
+    <label class="field" for="addr">Address Line 1 <span class="req">*</span></label><input type="text" id="addr" />
+    <label class="field" for="city">City <span class="req">*</span></label><input type="text" id="city" />
+    <label class="field" for="zip">Postal Code <span class="req">*</span></label><input type="text" id="zip" />
+  </section>
+
+  <section class="voluntary">
+    <h2>Voluntary Disclosures</h2>
+    <p>Please note that there are two (2) voluntary self-identification forms: 1) Voluntary Self-Identification of Disability and 2) Voluntary Self-Identification of Gender. Completing these forms is voluntary.</p>
+    <h3>1. Voluntary Self-Identification of Disability</h3>
+    <div class="checks">
+      <label><input type="checkbox" id="dis0" /> I DON'T WISH TO ANSWER (India)</label>
+      <label><input type="checkbox" id="dis1" /> NO, I DON'T HAVE A DISABILITY (India)</label>
+      <label><input type="checkbox" id="dis2" /> YES, I HAVE A DISABILITY (or previously had a disability) (India)</label>
+    </div>
+    <h3>2. Voluntary Self-Identification of Gender</h3>
+    <fieldset style="border:0;padding:0;margin:0">
+      <legend class="field">Gender:</legend>
+      <div class="checks">
+        <label><input type="radio" name="gender" value="Male" /> Male</label>
+        <label><input type="radio" name="gender" value="Female" /> Female</label>
+        <label><input type="radio" name="gender" value="Non-binary" /> Non-binary</label>
+        <label><input type="radio" name="gender" value="Prefer not to say" /> Prefer not to say</label>
+      </div>
+    </fieldset>
+  </section>
+
+  <section>
+    <h2>Application Questions</h2>
+    <label class="field" id="lbl-q1" for="q1">Do you or your spouse have, or plan to have, a role on a board, advisory group, management team, or any business interest in a company or organization that competes, or could be perceived to compete, with PayPal? <span class="req">*</span></label>
+    <div class="ef"><input id="q1" role="combobox" aria-labelledby="lbl-q1" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-q2" for="q2">Do you have a family relationship (including spouse, partner, parent, grandparent, child, sibling, in-law, aunt, uncle) or close personal relationship (close friendship or relationship) with an employee of the PayPal group of companies? <span class="req">*</span></label>
+    <div class="ef"><input id="q2" role="combobox" aria-labelledby="lbl-q2" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-q3" for="q3">Are you a current Government Official? A Government Official is an officer or employee of a Government at any level, or of any department, agency, or instrumentality of a Government. <span class="req">*</span></label>
+    <div class="ef"><input id="q3" role="combobox" aria-labelledby="lbl-q3" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-q4" for="q4">Do you have a family relationship (including spouse, partner, parent, grandparent, child, sibling, in-law, aunt, uncle) or close personal relationship (close friendship or relationship) with a Government Official? <span class="req">*</span></label>
+    <div class="ef"><input id="q4" role="combobox" aria-labelledby="lbl-q4" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <label class="field" id="lbl-q5" for="q5">To the best of your knowledge, are you a referral of a) an existing/potential known merchant, or b) an existing or potential Third Party, or c) a current government official? <span class="req">*</span></label>
+    <div class="ef"><input id="q5" role="combobox" aria-labelledby="lbl-q5" readonly placeholder="Select" /><div class="efl" role="listbox" hidden></div><div class="efm"></div></div>
+
+    <p>I understand that a positive declaration does not mean that I would automatically be disqualified from being considered for employment but a false declaration may render me ineligible to be considered for employment with PayPal and/or its group of companies. Please enter today's date on your acknowledgement.</p>
+    <label class="field" for="ack">Date <span class="req">*</span></label><input type="date" id="ack" />
+  </section>
+
+  <section>
+    <h2>Terms and Conditions</h2>
+    <label class="checks" style="font-weight:400"><input type="checkbox" id="t1" /> Yes, I have read and consent to this Privacy Statement.</label>
+    <label class="checks" style="font-weight:400"><input type="checkbox" id="t2" /> Yes, I acknowledge and agree to abide by the terms of this Nondisclosure Agreement.</label>
+  </section>
+
+  <div class="actions">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="button" id="submit">Submit application</button>
+  </div>
+  <div id="formerr" class="err"></div>
+
+  <script>
+    // A small Eightfold-like custom select: focus/click opens a listbox that filters as you type and
+    // announces "N matches found"; clicking an option writes it into the combobox input.
+    const COUNTRIES = ['Afghanistan', 'Argentina', 'Australia', 'Austria', 'Bangladesh', 'Belgium', 'Brazil', 'Canada', 'Chile', 'China', 'Colombia', 'Czech Republic', 'Denmark', 'Egypt', 'Finland', 'France', 'Germany', 'Ghana', 'Greece', 'Hong Kong', 'Hungary', 'India', 'Indonesia', 'Ireland', 'Israel', 'Italy', 'Japan', 'Kenya', 'Malaysia', 'Mexico', 'Netherlands', 'New Zealand', 'Nigeria', 'Norway', 'Pakistan', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Romania', 'Russia', 'Saudi Arabia', 'Singapore', 'South Africa', 'South Korea', 'Spain', 'Sri Lanka', 'Sweden', 'Switzerland', 'Taiwan', 'Thailand', 'Turkey', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Vietnam'];
+    const build = (input, options) => {
+      const box = input.closest('.ef');
+      const list = box.querySelector('.efl');
+      const count = box.querySelector('.efm');
+      list.innerHTML = options.map((o) => `<div role="option" tabindex="-1">${o}</div>`).join('');
+      const rows = [...list.children];
+      const shown = () => rows.filter((r) => !r.hidden);
+      const announce = () => { count.textContent = `${shown().length} matches found.`; };
+      const open = () => { list.hidden = false; input.setAttribute('aria-expanded', 'true'); announce(); };
+      const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); rows.forEach((r) => r.classList.remove('active')); };
+      input.addEventListener('focus', open);
+      input.addEventListener('click', open);
+      input.addEventListener('input', () => { open(); filter(); });
+      input.addEventListener('keyup', (e) => {
+        if (e.key === 'Escape') return close();
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const vis = shown();
+          if (!vis.length) return;
+          const cur = vis.findIndex((r) => r.classList.contains('active'));
+          vis.forEach((r) => r.classList.remove('active'));
+          const next = e.key === 'ArrowDown' ? (cur + 1) % vis.length : (cur - 1 + vis.length) % vis.length;
+          vis[next].classList.add('active');
+          vis[next].scrollIntoView({ block: 'nearest' });
+          return;
+        }
+        if (e.key === 'Enter') {
+          const act = shown().find((r) => r.classList.contains('active'));
+          if (act) { input.value = act.textContent; close(); }
+          return;
+        }
+        filter();
+      });
+      const filter = () => {
+        const q = input.value.trim().toLowerCase();
+        rows.forEach((r) => { r.hidden = !!q && !r.textContent.toLowerCase().includes(q); });
+        announce();
+      };
+      rows.forEach((r) => {
+        r.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus on the combobox
+        r.addEventListener('click', () => { input.value = r.textContent; close(); });
+      });
+      return { open, close };
+    };
+    const val = (id) => document.getElementById(id).value.trim();
+    const selects = {
+      cc: build(document.getElementById('cc'), ['+91', 'United States (+1)', 'United Kingdom (+44)', 'Singapore (+65)', 'United Arab Emirates (+971)']),
+      hear: build(document.getElementById('hear'), ['Job Board', 'Glassdoor', 'HireEZ', 'Indeed', 'Moseeker', 'RiseSmart', 'Zhiphin']),
+      prev: build(document.getElementById('prev'), ['Yes', 'No']),
+      country: build(document.getElementById('country'), COUNTRIES),
+      q1: build(document.getElementById('q1'), ['Yes', 'No']),
+      q2: build(document.getElementById('q2'), ['Yes', 'No']),
+      q3: build(document.getElementById('q3'), ['Yes', 'No']),
+      q4: build(document.getElementById('q4'), ['Yes', 'No']),
+      q5: build(document.getElementById('q5'), ['Yes', 'No']),
+    };
+    window.report = () => ({
+      resume: document.getElementById('resume').files.length,
+      fn: val('fn'), ln: val('ln'), em: val('em'), cc: val('cc'), ph: val('ph'),
+      hear: val('hear'), prev: val('prev'), country: val('country'),
+      lgvn: val('lgvn'), lfam: val('lfam'), gvn: val('gvn'), fam: val('fam'), prefname: document.getElementById('prefname').checked,
+      addr: val('addr'), city: val('city'), zip: val('zip'),
+      disability: ['dis0', 'dis1', 'dis2'].map((id) => document.getElementById(id).checked),
+      gender: document.querySelector('input[name="gender"]:checked')?.value,
+      q1: val('q1'), q2: val('q2'), q3: val('q3'), q4: val('q4'), q5: val('q5'), ack: val('ack'),
+      t1: document.getElementById('t1').checked, t2: document.getElementById('t2').checked,
+    });
+    document.getElementById('submit').addEventListener('click', () => {
+      const need = ['fn', 'ln', 'em', 'cc', 'ph', 'hear', 'prev', 'country', 'gvn', 'fam', 'addr', 'city', 'zip', 'q1', 'q2', 'q3', 'q4', 'q5', 'ack'];
+      const missing = need.filter((id) => !val(id)).map((id) => document.querySelector(`label[for="${id}"]`)?.textContent?.trim() || id);
+      const noTerms = !document.getElementById('t1').checked || !document.getElementById('t2').checked;
+      document.getElementById('formerr').textContent = missing.length || noTerms
+        ? `Please complete: ${missing.join('; ')}${noTerms ? (missing.length ? '; ' : '') + 'the consent boxes' : ''}`
+        : '';
+    });
+  </script>
+</body>
+</html>

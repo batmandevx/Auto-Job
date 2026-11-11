@@ -213,6 +213,22 @@ export function removeDocument(kind) {
   saveProfile(p);
 }
 
+// ---------- skill-gap journal ----------
+// Every tailored job records the keywords the candidate doesn't have yet: the raw material for the
+// skill-gap heatmap and the learning plan (/api/upskill).
+const GAPS = path.join(DATA_DIR, 'skill-gaps.json');
+export function recordGaps(entry) {
+  const list = read(GAPS, []);
+  const key = `${entry.company || ''}|${entry.title || ''}`.toLowerCase();
+  const rec = { ...entry, at: new Date().toISOString() };
+  const i = list.findIndex((g) => `${g.company || ''}|${g.title || ''}`.toLowerCase() === key);
+  if (i >= 0) list[i] = { ...list[i], ...rec };
+  else list.unshift(rec);
+  write(GAPS, list.slice(0, 300));
+}
+export const listGaps = () => read(GAPS, []);
+export const saveGaps = (list) => write(GAPS, list);
+
 // Remembered answers, keyed by the normalised question text.
 export const bankKey = (label) =>
   String(label || '')

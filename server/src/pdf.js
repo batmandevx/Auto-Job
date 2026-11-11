@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { degreeName } from './tailor.js';
 
 // Single-column, ATS-friendly layout: standard fonts, real text, no tables or images.
 const MARGIN = 42;
@@ -152,9 +153,10 @@ function drawResume(r, k) {
     }
     if (has(r.education?.map((e) => e.school))) {
       section('Education');
+      const future = (end) => Number(String(end || '').match(/(20\d\d)/)?.[1]) >= new Date().getFullYear();
       for (const e of r.education) {
-        row(e.school, dates(e.start, e.end));
-        sub([[e.degree, e.field].filter(has).join(', '), has(e.gpa) ? `GPA: ${e.gpa}` : ''].filter(has).join('  |  '));
+        row(e.school, dates(e.start, future(e.end) ? `Expected ${e.end}` : e.end));
+        sub([[degreeName(e.degree), e.field].filter(has).join(', '), has(e.gpa) ? `GPA: ${e.gpa}` : ''].filter(has).join('  |  '));
         bullets(e.details);
       }
     }

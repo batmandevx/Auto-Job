@@ -208,6 +208,52 @@
         </div>
         <pre id="wellfoundCode" class="code" hidden></pre>
       </div>
+      <div class="card script-card">
+        <div class="row between" style="margin:0">
+          <div>
+            <h3 class="card-title">LinkedIn Easy Apply script</h3>
+            <p class="hint" style="margin:0">Smart console script: fills each Easy Apply step from your profile, skips unanswerable jobs, never submits incomplete.</p>
+          </div>
+          <span class="badge">LinkedIn</span>
+        </div>
+        <ol class="steps-mini">
+          <li>Open <a href="https://www.linkedin.com/jobs/search/?f_AL=true" target="_blank">linkedin.com/jobs/search/?f_AL=true</a> (Easy Apply filter) and sign in</li>
+          <li>Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>J</kbd> to open the Console</li>
+          <li>Paste (<kbd>⌘</kbd><kbd>V</kbd>) and press <kbd>Enter</kbd></li>
+        </ol>
+        <p class="hint warn-note">⚠️ Starts as a dry run (fills, submits nothing). Automation is against LinkedIn's terms — keep volume low or your account can be restricted.</p>
+        <div class="row">
+          <button id="copyLinkedin" class="btn primary">
+            <svg viewBox="0 0 24 24" class="ico"><rect x="9" y="9" width="11" height="11" rx="2" fill="none"/><path d="M5 15V5a2 2 0 0 1 2-2h8" fill="none"/></svg>
+            <span>Copy script</span>
+          </button>
+          <button id="viewLinkedin" class="btn ghost">View</button>
+        </div>
+        <pre id="linkedinCode" class="code" hidden></pre>
+      </div>
+      <div class="card script-card">
+        <div class="row between" style="margin:0">
+          <div>
+            <h3 class="card-title">Naukri auto-apply script</h3>
+            <p class="hint" style="margin:0">Loads each job in a hidden same-origin iframe, fills the apply form from your profile, skips what it can't answer. Single job pages work too.</p>
+          </div>
+          <span class="badge">Naukri</span>
+        </div>
+        <ol class="steps-mini">
+          <li>Open a <a href="https://www.naukri.com/software-engineer-jobs-in-india" target="_blank">Naukri search page</a> and sign in</li>
+          <li>Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>J</kbd> to open the Console</li>
+          <li>Paste (<kbd>⌘</kbd><kbd>V</kbd>) and press <kbd>Enter</kbd></li>
+        </ol>
+        <p class="hint warn-note">⚠️ Starts as a dry run (fills, submits nothing). Automation is against Naukri's terms — keep volume low or your account can be restricted.</p>
+        <div class="row">
+          <button id="copyNaukri" class="btn primary">
+            <svg viewBox="0 0 24 24" class="ico"><rect x="9" y="9" width="11" height="11" rx="2" fill="none"/><path d="M5 15V5a2 2 0 0 1 2-2h8" fill="none"/></svg>
+            <span>Copy script</span>
+          </button>
+          <button id="viewNaukri" class="btn ghost">View</button>
+        </div>
+        <pre id="naukriCode" class="code" hidden></pre>
+      </div>
     </section>
 
     <!-- HACKATHONS -->
@@ -260,6 +306,11 @@
         <div class="funnel" id="trackFunnel"></div>
         <div class="insights" id="trackInsights"></div>
       </div>
+      <div class="card" id="gapsCard">
+        <div class="row between" style="margin:0 0 6px"><h3 class="card-title" style="margin:0">🎯 Skill gaps</h3><span class="hint" id="gapsMeta"></span></div>
+        <p class="hint">What the jobs you tailored for asked for and your profile doesn't have yet. Collected from every tailoring run.</p>
+        <div id="gapsOut"></div>
+      </div>
       <div class="card" id="traceCard" hidden>
         <div class="row between" style="margin:0 0 6px"><h3 class="card-title" style="margin:0">📬 From your Gmail</h3><span class="hint" id="traceMeta"></span></div>
         <div id="traceOut"></div>
@@ -297,6 +348,13 @@
         </label>
         <button id="importResume" class="btn primary">Import resume</button>
         <div id="profileOut"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Find skills on my GitHub</h3>
+        <p class="hint">Scans the repos in your GitHub link for tools you've never listed. Suggestions only — nothing is added until you tap +.</p>
+        <button id="expandScan" class="btn ghost sm">Scan my GitHub</button>
+        <div id="expandOut"></div>
       </div>
 
       <details class="card section">

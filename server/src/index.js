@@ -6,19 +6,22 @@ import cors from 'cors';
 import multer from 'multer';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { chatJSON, describeProvider, geminiStatus, usedFallbackRecently, aiUsage } from './llm.js';
-import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM, VISION_SYSTEM } from './prompts.js';
+import { chatJSON, describeProvider, describeHeavy, geminiStatus, usedFallbackRecently, aiUsage } from './llm.js';
+import { PARSE_SYSTEM, COVER_SYSTEM, EMAIL_SYSTEM, VISION_SYSTEM, UPSKILL_SYSTEM } from './prompts.js';
+import { cleanJobText } from './guard.js';
+import { atsCheck } from './atscheck.js';
 import { researchCompany, researchFor } from './research.js';
 import { traceOutcomes } from './outcomes.js';
-import { tailorResume, withoutGradSentences, crisp, cleanRole } from './tailor.js';
-import { profileSkillsInJD } from './keywords.js';
+import { tailorResume, tailorProblems, withoutGradSentences, crisp, cleanRole } from './tailor.js';
+import { profileSkillsInJD, makeMatcher, norm, TECH_TERMS } from './keywords.js';
 import { listHackathons } from './hackathons.js';
+import { listInternships } from './internships.js';
 import { mailConfigured, mailStatus, findVerification, sendApplication, smtpCheck } from './mail.js';
 import { renderResumePDF, renderCoverLetterPDF } from './pdf.js';
 import { answerFields } from './answer.js';
 import { followUpDraft, interviewPrep } from './coach.js';
 import { saveAppExtra, DATA_DIR } from './store.js';
-import { getProfile, saveProfile, listApplications, upsertApplication, updateApplication, deleteApplication, STATUSES, rememberAnswers, getDocument, saveDocument, removeDocument, DOCUMENT_KINDS, DEFAULT_ANSWERS, RESUME_DIR } from './store.js';
+import { getProfile, saveProfile, listApplications, upsertApplication, updateApplication, deleteApplication, STATUSES, rememberAnswers, getDocument, saveDocument, removeDocument, DOCUMENT_KINDS, DEFAULT_ANSWERS, RESUME_DIR, recordGaps, listGaps, saveGaps } from './store.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const app = express();
@@ -43,7 +46,7 @@ const route = (fn) => (req, res) =>
     res.status(500).json({ error: e.message });
   });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, llm: describeProvider(), resting: geminiStatus(), usingLocalAI: usedFallbackRecently(), gmail: mailConfigured(), hasProfile: !!getProfile(), ai: aiUsage() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, llm: describeProvider(), heavy: describeHeavy(), resting: geminiStatus(), usingLocalAI: usedFallbackRecently(), gmail: mailConfigured(), hasProfile: !!getProfile(), ai: aiUsage() }));
 
 // Upload one or more resume versions (PDF / DOCX / TXT) and merge them into one structured profile.
 async function resumeText(file) {
@@ -123,13 +126,28 @@ app.put('/api/profile', (req, res) => {
 app.post('/api/tailor', route(async (req, res) => {
   const profile = getProfile();
   if (!profile) return res.status(400).json({ error: 'Import your resume first' });
-  const { title = '', company = '', description = '' } = req.body;
+  const { title = '', company = '' } = req.body;
+  // Postings are untrusted input: hidden text and instruction-shaped lines never reach the model.
+  const { text: description, stripped } = cleanJobText(req.body.description);
+  if (stripped.length) console.warn(`Posting integrity gate: stripped ${stripped.length} instruction-shaped line(s), first: ${stripped[0]}`);
   if (description.trim().length < 80) return res.status(400).json({ error: 'Job description is missing or too short' });
 
   const { answers, sourceText, ...resume } = profile;
-  const out = await tailorResume(resume, sourceText || '', { title, company, description }, { fillGaps: !!req.body.fillGaps });
+  const job = { title, company, description };
+  let out = await tailorResume(resume, sourceText || '', job, { fillGaps: !!req.body.fillGaps });
+  // Quality gate: top keywords in the headline/summary, summary shape, real numbers kept.
+  // One fix-up pass with the problems spelled out when it fails (same pattern as the cover letter).
+  const problems = tailorProblems(out, resume);
+  if (problems.length) {
+    const redo = await tailorResume(resume, sourceText || '', job, { fillGaps: !!req.body.fillGaps, fixThese: problems, previous: out.resume }).catch(() => null);
+    if (redo) out = { ...redo, changes: [...redo.changes, `Quality pass (${problems.length}): ${problems.join(' | ')}`] };
+  }
   const tailored = out.resume;
   const pdf = await renderResumePDF(tailored);
+  // What an ATS parser actually sees: contact details in the text layer, no garbled glyphs, keywords present.
+  const ats = await atsCheck(pdf, { profile, keywords: out.keywords.covered }).catch(() => null);
+  // Journal the gaps this job asked for: the skill-gap heatmap (/api/upskill) is built from these.
+  recordGaps({ title, company, covered: out.keywords.covered, missing: out.missingKeywords });
 
   const safe = (s) => s.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '');
   const filename = `${safe(resume.name || 'Resume')}_${safe(company || 'Resume')}.pdf`;
@@ -143,6 +161,7 @@ app.post('/api/tailor', route(async (req, res) => {
     matchScore: out.matchScore,
     missingKeywords: out.missingKeywords,
     keywords: out.keywords,
+    ats,
   });
 }));
 
@@ -151,7 +170,8 @@ app.post('/api/answer', route(async (req, res) => {
   const profile = getProfile();
   if (!profile) return res.status(400).json({ error: 'Import your resume first' });
   const { sourceText, ...rest } = profile;
-  res.json(await answerFields({ fields: req.body.fields || [], profile: rest, job: req.body.job, coverLetter: req.body.coverLetter, errors: req.body.errors || {}, pageErrors: req.body.pageErrors || [] }));
+  const job = req.body.job ? { ...req.body.job, description: cleanJobText(req.body.job.description).text } : undefined;
+  res.json(await answerFields({ fields: req.body.fields || [], profile: rest, job, coverLetter: req.body.coverLetter, errors: req.body.errors || {}, pageErrors: req.body.pageErrors || [] }));
 }));
 
 const STOCK = /I am (writing|applying)|validates? my|my capacity|leverag\w+|proves? my (ability|capability)|demonstrates? my|showcas\w+|my technical foundation|beyond these tools|passionate|excited|thrilled|perfect fit|I believe|I am confident|dream job|esteemed|leverage my|hit the ground running|from day one/gi;
@@ -173,13 +193,14 @@ function coverProblems(t) {
 app.post('/api/research', route(async (req, res) => {
   const profile = getProfile();
   if (!profile) return res.status(400).json({ error: 'Import your resume first' });
-  res.json(await researchCompany(req.body || {}, profile, { refresh: !!req.body?.refresh }));
+  res.json(await researchCompany({ ...req.body, description: cleanJobText(req.body?.description).text }, profile, { refresh: !!req.body?.refresh }));
 }));
 
 app.post('/api/cover-letter', route(async (req, res) => {
   const profile = getProfile();
   if (!profile) return res.status(400).json({ error: 'Import your resume first' });
-  const { title = '', company = '', location = '', description = '' } = req.body;
+  const { title = '', company = '', location = '' } = req.body;
+  const description = cleanJobText(req.body.description).text;
   if (description.trim().length < 80) return res.status(400).json({ error: 'Job description is missing or too short' });
   const { sourceText, answerBank, documents, personal, ...rest } = profile;
   const keywords = [...new Set([...(req.body.keywords || []), ...profileSkillsInJD(rest, description)])].slice(0, 16);
@@ -240,7 +261,7 @@ app.post('/api/email/draft', route(async (req, res) => {
   const { job = {}, recruiterName = '', keywords = [] } = req.body;
   const { sourceText, answerBank, documents, personal, ...rest } = profile;
   const kws = [...new Set([...keywords, ...profileSkillsInJD(rest, job.description || '')])].slice(0, 14);
-  const out = await chatJSON(EMAIL_SYSTEM, JSON.stringify({ PROFILE: rest, RECRUITER_NAME: recruiterName, KEYWORDS_TO_USE: kws, JOB: { ...job, description: String(job.description || '').slice(0, 10000) } }), { temperature: 0.5 });
+  const out = await chatJSON(EMAIL_SYSTEM, JSON.stringify({ PROFILE: rest, RECRUITER_NAME: recruiterName, KEYWORDS_TO_USE: kws, JOB: { ...job, description: cleanJobText(job.description).text.slice(0, 10000) } }), { temperature: 0.5 });
   const body = String(out.body || '').split('\n').map((line) => withoutGradSentences(line) || (line.trim() ? '' : line)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!out.subject || body.length < 80) throw new Error('The AI returned an empty email, try again');
   res.json({ subject: String(out.subject).trim(), body });
@@ -272,6 +293,84 @@ app.get('/api/otp', route(async (req, res) => {
 
 // Hackathons from 8 platforms, normalised and cached.
 app.get('/api/hackathons', route(async (req, res) => res.json(await listHackathons({ refresh: req.query.refresh === '1' }))));
+
+// Internships 2027 (github.com/zapplyjobs): a curated internship list, parsed from the repo's README.
+app.get('/api/internships', route(async (req, res) => res.json(await listInternships({ refresh: req.query.refresh === '1' }))));
+
+// Skill-gap heatmap: every tailored job's missing keywords, aggregated (data/skill-gaps.json journal).
+app.get('/api/upskill', (req, res) => {
+  const gaps = listGaps();
+  const byTerm = new Map();
+  for (const g of gaps) {
+    for (const m of g.missing || []) {
+      const k = norm(m);
+      if (!k) continue;
+      const e = byTerm.get(k) || { term: m, jobs: [] };
+      const who = g.company || g.title || 'a job';
+      if (!e.jobs.includes(who)) e.jobs.push(who);
+      byTerm.set(k, e);
+    }
+  }
+  const ranked = [...byTerm.values()].sort((a, b) => b.jobs.length - a.jobs.length).slice(0, 20);
+  res.json({ jobs: gaps.length, gaps: ranked, plan: gaps.plan || null });
+});
+
+// Learning plan for the top gaps (heavy model; cached until the next tailor).
+app.post('/api/upskill', route(async (req, res) => {
+  const profile = getProfile();
+  if (!profile) return res.status(400).json({ error: 'Import your resume first' });
+  const gaps = listGaps();
+  if (!gaps.length) return res.status(400).json({ error: 'No tracked jobs yet — tailor a resume first' });
+  const byTerm = new Map();
+  for (const g of gaps) for (const m of g.missing || []) {
+    const k = norm(m);
+    const e = byTerm.get(k) || { term: m, jobs: new Set() };
+    e.jobs.add(g.company || g.title || 'a job');
+    byTerm.set(k, e);
+  }
+  const top = [...byTerm.values()].sort((a, b) => b.jobs.size - a.jobs.size).slice(0, 12).map((e) => ({ term: e.term, askedBy: [...e.jobs].slice(0, 5) }));
+  const { sourceText, answerBank, documents, personal, ...rest } = profile;
+  const plan = await chatJSON(
+    UPSKILL_SYSTEM,
+    JSON.stringify({ GAPS: top, PROFILE: { education: rest.education, skills: rest.skills }, TARGET_ROLES: rest.headline }),
+    { temperature: 0.4, heavy: true },
+  );
+  gaps.plan = { ...plan, at: new Date().toISOString() };
+  saveGaps(gaps);
+  res.json(gaps.plan);
+}));
+
+// Profile expansion: scan the GitHub account in the profile's links for tools the resume never listed.
+// Suggestions only — each one is added only when you confirm it (+ chip → /api/profile/skills).
+app.get('/api/expand', route(async (req, res) => {
+  const profile = getProfile();
+  if (!profile) return res.status(400).json({ error: 'Import your resume first' });
+  const user = (String(profile.links?.github || '').match(/github\.com\/([^/\s?#]+)/) || [])[1];
+  if (!user) return res.status(400).json({ error: 'Add your GitHub link to your profile first' });
+  const r = await fetch(`https://api.github.com/users/${user}/repos?per_page=100&sort=updated`, {
+    headers: { 'User-Agent': 'AutoJob (local tool)', Accept: 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.json()).message || ''}`);
+  const repos = (await r.json()).filter((x) => !x.fork);
+  const inProfile = makeMatcher(JSON.stringify(profile));
+  const NOISE = /hacktoberfest|awesome|tutorial|course|learn(ing)?|beginner|interview|portfolio|resume|cv\b|dotfiles|config|notes|100day|365day/i;
+  const suggestions = new Map();
+  const counts = new Map();
+  for (const repo of repos) {
+    for (const t of [...(repo.topics || []), repo.language].filter(Boolean)) {
+      const term = String(t).replace(/-/g, ' ').trim();
+      if (term.length < 2 || term.length > 30 || NOISE.test(term)) continue;
+      counts.set(term, (counts.get(term) || 0) + 1);
+      if (!suggestions.has(term)) suggestions.set(term, repo.name);
+    }
+  }
+  // Keep topics that show up in 2+ repos, or that are known tech terms: one-off topics are usually noise.
+  const tech = makeMatcher(TECH_TERMS.join(', '));
+  const kept = [...suggestions].filter(([term]) => ((counts.get(term) || 0) >= 2 || tech(term)) && !inProfile(term));
+  res.json({ user, repos: repos.length, suggestions: kept.slice(0, 25).map(([skill, source]) => ({ skill, source })) });
+}));
+
 
 // Application tracker: saved → applied → assessment → interviews → offer / rejected.
 app.get('/api/applications', (req, res) => res.json({ statuses: STATUSES, items: listApplications() }));

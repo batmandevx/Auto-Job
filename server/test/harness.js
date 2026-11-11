@@ -27,7 +27,10 @@
       const attempted = new Set();
       for (let round = 0; round < 3; round++) {
         const { fields } = await jf.scan();
-        const todo = fields.filter((f) => !attempted.has(f.id) && !f.filled);
+        // The panel's default is "Only empty" off: it re-attempts what the site pre-filled too (often wrong:
+        // a phone with a leading 0, an address from the site's own resume import). Filled custom dropdowns
+        // keep no options in the scan, so those stay skipped.
+        const todo = fields.filter((f) => !attempted.has(f.id) && (!f.filled || !['dropdown', 'combobox'].includes(f.type)));
         if (!todo.length) break;
         todo.forEach((f) => attempted.add(f.id));
         const files = todo.filter((f) => f.type === 'file');

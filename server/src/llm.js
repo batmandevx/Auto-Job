@@ -4,12 +4,43 @@
 
 const provider = () => (process.env.LLM_PROVIDER || 'ollama').toLowerCase();
 
+// OpenAI-compatible providers that can be used directly (LLM_PROVIDER=openrouter) and as
+// FALLBACK_PROVIDERS when the primary provider is out of quota, down or its key is dead.
+const COMPAT_PROVIDERS = {
+  groq: { base: 'https://api.groq.com/openai/v1', key: 'GROQ_API_KEY', model: 'GROQ_MODEL', defaultModel: 'openai/gpt-oss-120b' },
+  openrouter: { base: 'https://openrouter.ai/api/v1', key: 'OPENROUTER_API_KEY', model: 'OPENROUTER_MODEL', defaultModel: 'google/gemma-4-31b-it:free' },
+  nvidia: { base: 'https://integrate.api.nvidia.com/v1', key: 'NVIDIA_API_KEY', model: 'NVIDIA_MODEL', defaultModel: 'deepseek-ai/deepseek-v4.1-flash' },
+  huggingface: { base: 'https://router.huggingface.co/v1', key: 'HUGGINGFACE_API_KEY', model: 'HUGGINGFACE_MODEL', defaultModel: '' },
+  litellm: { base: 'http://localhost:4000/v1', key: 'LITELLM_API_KEY', model: 'LITELLM_MODEL', defaultModel: 'bedrock-nova-2-lite' },
+};
+const compatCfg = (name) => {
+  const c = COMPAT_PROVIDERS[name];
+  return c && { base: name === 'litellm' ? (process.env.LITELLM_BASE_URL || c.base) : c.base, key: process.env[c.key] || '', model: process.env[c.model] || c.defaultModel };
+};
+
 export function describeProvider() {
   const p = provider();
+  const compat = compatCfg(p);
+  if (compat) return { provider: p, model: compat.model || `(set ${COMPAT_PROVIDERS[p].model})` };
   if (p === 'gemini') return { provider: p, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' };
   if (p === 'ollama') return { provider: p, model: process.env.OLLAMA_MODEL || 'qwen3.5:9b' };
   if (p === 'anthropic') return { provider: p, model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5' };
   return { provider: p, model: process.env.OPENAI_MODEL || 'gpt-4o-mini' };
+}
+
+// Quality-critical calls (resume parsing, tailoring, cover letters) can run on a DIFFERENT, stronger model
+// than the fast one used for form answers: set HEAVY_LLM_PROVIDER (gemini / anthropic / openai / ollama /
+// groq / openrouter / nvidia / huggingface / litellm) and the matching *_HEAVY_MODEL. Without it, "heavy"
+// only picks GEMINI_HEAVY_MODEL inside the Gemini path.
+export function describeHeavy() {
+  const p = (process.env.HEAVY_LLM_PROVIDER || provider()).toLowerCase();
+  const compat = compatCfg(p);
+  if (compat) return { provider: p, model: compat.model, dedicated: !!process.env.HEAVY_LLM_PROVIDER };
+  const model = p === 'gemini' ? (process.env.GEMINI_HEAVY_MODEL || process.env.GEMINI_MODEL || 'gemini-3.5-flash')
+    : p === 'ollama' ? (process.env.OLLAMA_HEAVY_MODEL || process.env.OLLAMA_MODEL || 'qwen3.5:9b')
+    : p === 'anthropic' ? (process.env.ANTHROPIC_HEAVY_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5')
+    : (process.env.OPENAI_HEAVY_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini');
+  return { provider: p, model, dedicated: !!process.env.HEAVY_LLM_PROVIDER };
 }
 
 // heavy: true marks quality-critical calls (resume parsing / tailoring) that may use a stronger model.
@@ -22,7 +53,53 @@ export function aiUsage() {
   return { calls: usage.calls, failed: usage.failed };
 }
 export async function chatJSON(system, user, { temperature = 0.2, heavy = false, budgetMs, images = [], search = false } = {}) {
+  try {
+    return await primaryJSON(system, user, { temperature, heavy, budgetMs, images, search });
+  } catch (e) {
+    // Quota gone, key dead or everything overloaded: walk the configured OpenAI-compatible fallbacks
+    // (FALLBACK_PROVIDERS=groq,openrouter,litellm,...). The visual check and research stay Gemini-only.
+    if (images.length || search) throw e;
+    const fb = await fallbackJSON(system, user, temperature, e);
+    if (fb !== undefined) return fb;
+    throw e;
+  }
+}
+
+// FALLBACK_PROVIDERS, tried in order, each only when its API key is set. Returns undefined when none worked.
+async function fallbackJSON(system, user, temperature, primaryError) {
+  const names = (process.env.FALLBACK_PROVIDERS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (!names.length) return undefined;
+  let lastError;
+  for (const name of names) {
+    const cfg = compatCfg(name);
+    if (!cfg) { lastError = new Error(`unknown fallback provider "${name}"`); continue; }
+    if (!cfg.key) { lastError = new Error(`${name}: ${COMPAT_PROVIDERS[name].key} is not set in server/.env`); continue; }
+    try {
+      const text = await openaiCompatible(system, user, temperature, cfg.model, cfg);
+      console.warn(`Primary AI failed (${String(primaryError?.message || '').slice(0, 80)}); used fallback provider "${name}" (${cfg.model})`);
+      lastFallbackAt = Date.now();
+      return parseJSON(text);
+    } catch (err) {
+      lastError = err;
+      console.warn(`Fallback provider "${name}" failed: ${String(err.message).slice(0, 100)}`);
+    }
+  }
+  console.warn(`All fallback providers failed; last error: ${String(lastError?.message).slice(0, 120)}`);
+  return undefined;
+}
+
+async function primaryJSON(system, user, { temperature, heavy, budgetMs, images, search }) {
   const p = provider();
+  // A stronger, separate model for quality-critical calls, when HEAVY_LLM_PROVIDER is configured.
+  const heavyProvider = heavy && !images.length && !search ? (process.env.HEAVY_LLM_PROVIDER || '').toLowerCase() : '';
+  if (heavyProvider && heavyProvider !== p) {
+    if (heavyProvider === 'gemini') return parseJSON((await gemini(system, user, temperature, true, budgetMs ?? 150000)).text);
+    if (heavyProvider === 'ollama') return parseJSON(await ollama(system, user, temperature, process.env.OLLAMA_HEAVY_MODEL));
+    if (heavyProvider === 'anthropic') return parseJSON(await anthropic(system, user, temperature, process.env.ANTHROPIC_HEAVY_MODEL));
+    const heavyCfg = compatCfg(heavyProvider);
+    if (heavyCfg) return parseJSON(await openaiCompatible(system, user, temperature, heavyCfg.model, heavyCfg));
+    return parseJSON(await openaiCompatible(system, user, temperature, process.env.OPENAI_HEAVY_MODEL));
+  }
   let text;
   if (search) {
     if (p !== 'gemini') throw new Error('Company research needs Gemini (LLM_PROVIDER=gemini): it searches the web with Google Search');
@@ -41,9 +118,12 @@ export async function chatJSON(system, user, { temperature = 0.2, heavy = false,
       text = await ollama(system, user, temperature);
     }
   }
-  else if (p === 'ollama') text = await ollama(system, user, temperature);
-  else if (p === 'anthropic') text = await anthropic(system, user, temperature);
-  else text = await openaiCompatible(system, user, temperature);
+  else if (p === 'ollama') text = await ollama(system, user, temperature, heavy ? process.env.OLLAMA_HEAVY_MODEL : undefined);
+  else if (p === 'anthropic') text = await anthropic(system, user, temperature, heavy ? process.env.ANTHROPIC_HEAVY_MODEL : undefined);
+  else {
+    const cfg = compatCfg(p);
+    text = await openaiCompatible(system, user, temperature, cfg ? cfg.model : heavy ? process.env.OPENAI_HEAVY_MODEL : undefined, cfg || undefined);
+  }
   return parseJSON(text);
 }
 
@@ -140,13 +220,13 @@ async function ollamaUp() {
   return fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false);
 }
 
-async function ollama(system, user, temperature) {
+async function ollama(system, user, temperature, model) {
   const base = process.env.OLLAMA_URL || 'http://localhost:11434';
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: process.env.OLLAMA_MODEL || 'qwen3.5:9b', // also used as the fallback when the provider is Gemini
+      model: model || process.env.OLLAMA_MODEL || 'qwen3.5:9b', // also used as the fallback when the provider is Gemini
       stream: false,
       format: 'json',
       think: false, // reasoning models (qwen3.x, deepseek-r1) are much slower with it and the JSON is no better
@@ -163,16 +243,18 @@ async function ollama(system, user, temperature) {
   return (await res.json()).message.content;
 }
 
-async function openaiCompatible(system, user, temperature) {
-  const base = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+async function openaiCompatible(system, user, temperature, model, cfg) {
+  if (cfg && !cfg.model) throw new Error(`${cfg.base}: no model configured (set its *_MODEL in server/.env)`);
+  const base = cfg?.base || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY || ''}`,
+      Authorization: `Bearer ${cfg ? cfg.key : process.env.OPENAI_API_KEY || ''}`,
     },
+    signal: AbortSignal.timeout(Number(process.env.OPENAI_TIMEOUT_MS || 60000)),
     body: JSON.stringify({
-      model: describeProvider().model,
+      model: model || cfg?.model || describeProvider().model,
       temperature,
       response_format: { type: 'json_object' },
       messages: [
@@ -185,7 +267,7 @@ async function openaiCompatible(system, user, temperature) {
   return (await res.json()).choices[0].message.content;
 }
 
-async function anthropic(system, user, temperature) {
+async function anthropic(system, user, temperature, model) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -194,7 +276,7 @@ async function anthropic(system, user, temperature) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: describeProvider().model,
+      model: model || describeProvider().model,
       max_tokens: 8000,
       temperature,
       system: `${system}\nRespond with a single JSON object and nothing else.`,

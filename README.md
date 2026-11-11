@@ -426,7 +426,7 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 - **Match score:** every posting gets a 0–100 score from your target roles, skills in the title, seniority against your experience ("Senior", "5+ years" are marked down for a fresher), internship vs full-time and whether you already applied. The list sorts best match first (or *As found*); hover a score for the reasons.
 - **Safe queue:** **Start applying** skips jobs you already applied to, pauses 20–40 s between applications, and stops at 25 a day.
 
-1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
+1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus, **Internships 2027** — 600+ curated tech internships from [zapplyjobs](https://github.com/zapplyjobs/Internships-2027), parsed by the server every 10 minutes with location, posted time and visa-sponsorship flags), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
 2. **Scan all my boards** opens each one and merges every posting into one list: *Role · Company · location · pay*.
 3. Filter titles, tick the jobs you want (**Select all shown** helps), then press **Start applying**. Auto Job opens each job, applies, fills and waits for your review. **Skip this job** moves on.
 4. **☆ Save to tracker** saves ticked jobs as *To apply*.
@@ -435,6 +435,8 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
    - **Your details:** the public script holds only placeholders, in a clearly marked **YOUR DETAILS** block at the top (name, one-line intro, highlights, links). The Copy button fills that block from your Auto Job profile. Or edit it yourself: save your copy as `extension/scripts/wellfound-autoapply.local.js`. *.local.js files are git-ignored, so your details are never committed, and the Copy button always prefers that file.
    - **Settings** (the `CONFIG` block): `dryRun` (fill, don't submit), `maxApplications` per run (default 25), `maxAgeDays` (skip older posts, default 7), `skipTitles` (e.g. `['senior', 'manager']`).
    - **Safety:** it won't run while placeholders are still there. Type `window.wellfoundStop = true` in the console to stop it. At the end it prints a table of every job it applied to.
+- **Copy LinkedIn script (Easy Apply):** same pattern for LinkedIn — opens each Easy Apply job, fills every step from your profile (name, contact, links, a regex-matched answers map for Yes/No and dropdown questions), and pages through the search results. **Smart about what it can't answer:** a job with an unanswered *required* field is skipped, never submitted incomplete. It **starts as a dry run** (`dryRun: true` fills everything, submits nothing — flip it to `false` once you've watched one). Stop it with `window.linkedinStop = true`. ⚠️ Automation is against LinkedIn's terms: bulk runs can get your account restricted, so the defaults are conservative (10 per run, 20–40 s pacing). Your own copy: `extension/scripts/linkedin-autoapply.local.js` (git-ignored); the panel's Copy button fills your details.
+- **Copy Naukri script:** same idea for Naukri. Naukri opens each job as a new page (which would kill a normal console script), so this one loads each job page in a **hidden same-origin iframe** (Naukri allows same-origin framing), applies inside it, and removes it — your real tab never navigates. On a single `/job-listings-…` page it just applies there. Label-driven answers, unanswered required fields are skipped, dry run first, stop with `window.naukriStop = true`. ⚠️ Same terms caveat as LinkedIn: keep volume low. Your own copy: `extension/scripts/naukri-autoapply.local.js`; the panel's Copy button fills your details.
 
 ### Hacks tab
 
@@ -470,7 +472,8 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 - Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
 - Each card has a status dropdown, a timeline, notes (recruiter, test date, link) and **Open job**.
 - Counters at the top filter the list. Search by company or role.
-- **📬 Reads your whole inbox for your job search** (Check Gmail, and on its own every 3 hours while the server runs). Every email in the last 90 days is sorted by sender and subject; job-related ones are read in full. Rules recognise applicant-tracking systems, job portals, test platforms and outcome wording; the AI reads the unclear ones (subject, sender and first lines only) to say whether it's really about *your* applications, which employer (never the job board) and which role. Job alerts, newsletters, hackathons and receipts are left out.
+- 🎯 **Skill gaps:** every tailoring run journals the keywords the job asked for that your profile doesn't have. The Tracker aggregates them into a heatmap (hover a chip for which companies asked), and **🎓 Build a 6-week learning plan** turns the top gaps into a prioritized plan with proof artifacts — the same honesty rule as everywhere: never claim a skill without doing the work.
+- **📬 Reads your whole mailbox for your job search** (Check Gmail, and on its own every 3 hours while the server runs). Every email in the last 90 days is sorted by sender and subject; job-related ones are read in full. There is **no per-scan cap**: a large mailbox is paged through in chunks, one failed chunk never loses the rest, and a dropped Gmail connection retries instead of aborting. The Gmail card starts with the whole picture: **total tracked · applied · assessments · interviews · offers · rejected · to apply · awaiting reply**, then the details. Rules recognise applicant-tracking systems, job portals, test platforms and outcome wording; the AI reads the unclear ones (subject, sender and first lines only) to say whether it's really about *your* applications, which employer (never the job board) and which role. Job alerts, newsletters, hackathons and receipts are left out.
   - Tracked applications move forward (never backwards, except rejections and offers, which always land).
   - Applications you never tracked are **added from the emails about them**, one per role, with their status, and later emails follow them. Remove any with one click.
   - Each card keeps **every email about it as a timeline**. Recruiters writing to you are listed separately.
@@ -481,6 +484,7 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 ### Profile tab
 
 - **Resume import:** pick several versions (for example an AI resume and a full-stack resume). They're merged into one master profile that keeps every distinct bullet. Manual edits you made survive a re-import.
+- **Find skills on my GitHub:** scans the repos in your GitHub link for tools you never listed (Swift, Jupyter Notebook…) and suggests them as + chips — added only when you confirm they're true.
 - **Current vs permanent address:** fill *Current address / city / state / PIN* if you live somewhere else (a hostel or flat). Forms asking for a current or correspondence address get it, and permanent-address questions get your home address.
 - **Personal details:** DOB, gender, pronouns, marital status, parents' names, address, nationality, languages, 10th / 12th schooling. These are for forms that ask.
 - **Documents:** photo, signature, 10th / 12th marksheets, ID proof, address proof, PAN, degree, transcript (PDF / PNG / JPG). Upload fields that ask for one get the right file. A "passport size photo" always gets your photo, never your ID.
@@ -629,7 +633,7 @@ What makes it work on real portals and not only on simple forms:
 
 **Characters a site forbids** (Workday: `< > [ ] " { } \`): descriptions are typed with single quotes, and when a site names forbidden characters, self-healing removes them and retypes.
 
-**Built against real portals:** fixes came from live applications on Workday (U.S. Bank), Lever (Acron Aviation), Phenom (GE HealthCare), PyjamaHR, Recruit CRM and Indian job boards. Each has a matching test page in `server/test/`. Greenhouse, Ashby, SmartRecruiters, iCIMS and other ATS links are recognised, and every other site gets the same generic engine.
+**Built against real portals:** fixes came from live applications on Workday (U.S. Bank), Lever (Acron Aviation), Phenom (GE HealthCare), Eightfold (PayPal: conflict-of-interest questions, legal name, voluntary self-ID, custom comboboxes), Meta careers (phone-code dropdown, gender/disability self-ID, site pre-fills corrected), PyjamaHR, Recruit CRM and Indian job boards. Each has a matching test page in `server/test/`. Greenhouse, Ashby, SmartRecruiters, iCIMS and other ATS links are recognised, and every other site gets the same generic engine.
 
 ## Answers that never depend on the AI
 
@@ -675,7 +679,10 @@ flowchart TD
 
 - **ATS-friendly by design:** a single column, real selectable text in a standard font, no tables, images or text boxes, standard section names, and the posted job title in the headline.
 - **Keyword coverage:** every job keyword you genuinely have appears in the job's own spelling. Keywords you don't have are listed so you can add them if they're true (tap a **+ chip**), or put on a "Familiar with / learning" line with the 100% switch.
-- **Bullets with rhythm:** action verb → what you built → the tools the job asks for → the real result. No two bullets in a role start with the same verb.
+- **A quality gate, like the cover letter's:** after tailoring, the server checks that the job's top keywords appear verbatim in the headline/summary, that the summary is the right shape, and that bullets kept their real numbers. Anything failing gets one fix-up pass with the problems spelled out (noted in the changes list).
+- **An ATS check on the finished PDF:** the rendered resume is parsed back the way an applicant-tracking system reads it — contact details must extract as real text, no garbled glyphs, the job's keywords present — and the result is shown under the resume (idea from the [ai-job-search](https://github.com/ai-job-search-dev/ai-job-search) framework).
+- **Bullets with rhythm:** outcome-first — result verb → what you built → the tools the job asks for → the real number. No two bullets in a role start with the same verb.
+- **A stronger model for the writing:** resume tailoring, resume import and cover letters run on the "heavy" model (`GEMINI_HEAVY_MODEL`, default a Pro-class model); form answers stay on the fast one.
 - **Cover letters with a quality check:**
   - 250–330 words in four paragraphs: hook, proof, fit, close.
   - It's checked for length, paragraph count and stock phrases ("I am writing to express", "leveraging", "proves my ability"…). If it fails, the AI is told exactly what to fix and rewrites it once.
@@ -686,6 +693,7 @@ flowchart TD
 - **Nothing is invented.** The AI can only choose and reword bullets within the same job. The server rejects any rewrite that adds or changes a number, or drifts too far from your original. Skills you never listed are dropped.
 - **Facts come from your profile, not from the AI.** If a fact is missing (say a salary you never entered), the field is left empty and flagged.
 - **Everything the AI wrote is orange.** So are consent boxes and anything Auto Job isn't sure about.
+- **Job postings are untrusted input.** Before any posting text reaches a model, hidden characters and instruction-shaped lines ("ignore your instructions…") are stripped and logged — a malicious posting can't inject claims into your resume or answers.
 - **You submit.** The final Submit needs two clicks from you. Only answers you reviewed and submitted are remembered.
 - **CAPTCHAs and passwords stay with you.** Password fields are never filled, and CAPTCHAs are never solved.
 
@@ -707,7 +715,10 @@ All settings live in `server/.env` (copy `server/.env.example`):
 | `LLM_PROVIDER` | `ollama` | `gemini`, `ollama`, `openai` (any OpenAI-compatible API) or `anthropic` |
 | `GEMINI_API_KEY` | — | Your Gemini key |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Fast model for form answers |
-| `GEMINI_HEAVY_MODEL` | `gemini-3.5-flash` | Resume import, tailoring and cover letters |
+| `GEMINI_HEAVY_MODEL` | `gemini-3.5-pro` | Resume import, tailoring and cover letters (set a stronger model here) |
+| `HEAVY_LLM_PROVIDER` | — | Route resume/cover-letter calls to another provider (`gemini` / `anthropic` / `openai` / `ollama` / `groq` / `openrouter` / `nvidia` / `huggingface` / `litellm`) while form answers stay on `LLM_PROVIDER` |
+| `ANTHROPIC_HEAVY_MODEL` / `OPENAI_HEAVY_MODEL` / `OLLAMA_HEAVY_MODEL` | — | The stronger model each provider uses for resume + cover letter calls |
+| `FALLBACK_PROVIDERS` | — | Comma-separated OpenAI-compatible providers tried in order when the primary AI fails: `groq`, `openrouter`, `nvidia`, `huggingface`, `litellm` (any local proxy). Matching `*_API_KEY` / `*_MODEL` env vars configure each |
 | `GEMINI_FALLBACK_MODELS` | several | Tried in turn when a model is out of quota or overloaded |
 | `OLLAMA_MODEL` / `OLLAMA_URL` | `qwen3.5:9b` / `localhost:11434` | Local model, also the automatic fallback when Gemini fails |
 | `OLLAMA_FALLBACK` | on | Set to `off` to disable the Ollama fallback |
@@ -715,7 +726,7 @@ All settings live in `server/.env` (copy `server/.env.example`):
 | `ANTHROPIC_MODEL` / `ANTHROPIC_API_KEY` | — | Claude |
 | `GMAIL_USER` / `GMAIL_APP_PASSWORD` | — | Gmail for codes, verification links and Apply by email |
 
-**Gemini free tier:** about 20 requests per model per day. The server rotates through your fallback models, rests the ones that are out of quota until the daily reset, and falls back to Ollama if all are out. The panel's status pill shows **AI quota low** or **local AI (Gemini quota out)**. One application uses roughly 3–6 requests.
+**Gemini free tier:** about 20 requests per model per day. The server rotates through your fallback models, rests the ones that are out of quota until the daily reset, and falls back to Ollama if all are out. Set `FALLBACK_PROVIDERS=groq,openrouter,litellm` (plus the matching `*_API_KEY`s) to add OpenAI-compatible providers — Groq, OpenRouter, NVIDIA, HuggingFace, or any LiteLLM proxy — that are tried in order when the whole Gemini chain is down. The panel's status pill shows **AI quota low** or **local AI (Gemini quota out)**. One application uses roughly 3–6 requests.
 
 ## Server API
 
@@ -727,9 +738,11 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | POST | `/api/profile/import` | Import and merge resume files (multipart `resume`) |
 | GET / PUT | `/api/profile` | Read or save your profile |
 | POST | `/api/profile/skills` | Add skills you confirmed (+ chips) |
-| POST | `/api/tailor` | Tailored resume PDF + keyword coverage for a job |
+| POST | `/api/tailor` | Tailored resume PDF + keyword coverage + ATS text-layer check for a job |
 | POST | `/api/cover-letter` | Cover letter text + PDF for a job |
 | POST | `/api/answer` | Values for a list of form fields (with optional site errors) |
+| GET / POST | `/api/upskill` | Skill-gap heatmap from every tailored job; a 6-week learning plan |
+| GET | `/api/expand` | Skills found in your GitHub repos that your profile never listed |
 | POST | `/api/answer-bank` | Remember answers from a submitted form |
 | POST | `/api/applications/trace` | Read Gmail for outcomes (rejections, interviews, assessments, offers) and update the tracker |
 | POST | `/api/report-form` | Save a scrubbed form snapshot as a test page |
@@ -741,6 +754,7 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | GET | `/api/email/check` · `/api/mail/status` | Gmail connection status |
 | GET | `/api/otp` | Wait for a one-time code or verification link |
 | GET | `/api/hackathons` | Open hackathons from 8 platforms |
+| GET | `/api/internships` | The Internships 2027 list (zapplyjobs repo), parsed into jobs, cached 10 min |
 | GET / POST / PATCH / DELETE | `/api/applications[/:id]` | The tracker |
 | POST | `/api/applications/:id/followup` · `/api/applications/:id/prep` | A follow-up email draft, an interview prep brief |
 
@@ -753,16 +767,19 @@ Auto-Job/
 │   ├── background.js          opens the panel as side panel, popup, tab or window
 │   ├── sidepanel.html/.css/.js  the panel: Apply, Jobs, Hacks, Tracker, Profile
 │   ├── content.js             the form engine: scan, fill, verify, navigate
-│   └── scripts/               Wellfound console script (template; your *.local.js copy stays private)
+│   └── scripts/               console scripts (Wellfound, LinkedIn Easy Apply, Naukri); your *.local.js copies stay private
 ├── server/
 │   ├── src/
 │   │   ├── index.js           REST API, origin check
 │   │   ├── answer.js          profile rules, quick fixes, AI batching
-│   │   ├── tailor.js          resume tailoring, skill groups, filler removal
+│   │   ├── tailor.js          resume tailoring, skill groups, filler removal, quality gate, honesty checks
 │   │   ├── keywords.js        job keyword extraction and coverage
 │   │   ├── pdf.js             one-page resume and cover letter PDFs
+│   │   ├── atscheck.js        reads the rendered PDF back the way an ATS parser sees it
+│   │   ├── guard.js           posting integrity gate (strips hidden / instruction-shaped lines)
+│   │   ├── internships.js     the zapplyjobs Internships 2027 list, parsed into jobs
 │   │   ├── prompts.js         every AI prompt
-│   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude, quota handling
+│   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude + named fallback providers, quota handling
 │   │   ├── mail.js            Gmail IMAP / SMTP
 │   │   ├── hackathons.js      8 hackathon platforms
 │   │   ├── outcomes.js        Gmail outcome tracing: rejections, interviews, assessments, offers
@@ -792,6 +809,8 @@ With the server running, open any of these and use the panel on it:
 | `/test/juspay.html` | Phone with a separate +91 box, CAPTCHA hand-off |
 | `/test/heal.html` | Self-healing: one box heals at real typing, one always ends in "Needs you" |
 | `/test/harman.html` | Account-style portal: full address, phone with area code, password hand-off, entries in a different order |
+| `/test/eightfold.html` | Eightfold (PayPal-style): custom "N matches found" comboboxes, Yes/No dropdowns for conflict questions, legal name with "I have a preferred name", voluntary self-ID checkboxes, consent boxes |
+| `/test/meta.html` | Meta careers-style: phone with a country-code dropdown labelled "Code" (picks your real +91), gender/disability self-ID radios, site pre-filled values (wrong phone with a leading 0, wrong street) corrected from your profile, password boxes left for you |
 | `/test/pwc.html` | Workday: "School Not Listed", multi-select skills, language levels, Website URL boxes |
 | `/test/wdreal.html` | Real Workday behaviours: the cursor jumping from month to year, "Region", an extension box that must stay empty, lists that ignore scripted clicks |
 | `/test/strict.html` | Widgets that ignore anything but genuine clicks and keys: real clicks and typing |

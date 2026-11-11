@@ -183,32 +183,61 @@ const parseMail = async (msg) => {
 // Read your mail since `since` (ms): every email's sender and subject, then the full text of the job-related ones.
 // Returns status changes for tracked applications, new applications found in your mail, and recruiter messages.
 // `ignore`: ids of emails you dismissed (an application you removed), never read again.
-export async function traceOutcomes(apps, { since, limit = 600, ignore = [] } = {}) {
+export async function traceOutcomes(apps, { since, ignore = [] } = {}) {
   if (!mailConfigured()) throw new Error('Connect Gmail first: set GMAIL_USER and GMAIL_APP_PASSWORD in server/.env');
   const c = imapClient();
   const days = Math.max(1, Math.ceil((Date.now() - since) / 86400_000) + 1);
   const mails = [];
   let scanned = 0;
-  await c.connect();
+  // Gmail can drop a connection mid-scan: retry the connect, and skip a failed chunk instead of losing the whole trace.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await c.connect();
+      break;
+    } catch (e) {
+      if (attempt >= 2) throw new Error(`Gmail IMAP could not connect (check the App Password and your network): ${e.responseText || e.message}`);
+      console.warn(`Gmail connect failed (${e.message}); retrying…`);
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
   try {
     await c.mailboxOpen('[Gmail]/All Mail', { readOnly: true }).catch(() => c.mailboxOpen('INBOX', { readOnly: true }));
-    // 1) Every email in the window, headers only (fast), picked by sender and subject.
+    // 1) Every email in the window, headers only, in chunks — a large mailbox is never truncated.
     const all = (await c.search({ gmraw: `newer_than:${days}d -in:chats -in:sent` }, { uid: true })) || [];
     scanned = all.length;
     const pick = new Set();
-    for await (const msg of c.fetch(all.slice(-8000), { uid: true, envelope: true }, { uid: true })) {
-      const f = msg.envelope?.from?.[0] || {};
-      if (jobSignal({ subject: msg.envelope?.subject || '', fromName: f.name || '', fromAddr: f.address || '' }) >= 2) pick.add(msg.uid);
+    for (let i = 0; i < all.length; i += 1000) {
+      try {
+        for await (const msg of c.fetch(all.slice(i, i + 1000), { uid: true, envelope: true }, { uid: true })) {
+          const f = msg.envelope?.from?.[0] || {};
+          if (jobSignal({ subject: msg.envelope?.subject || '', fromName: f.name || '', fromAddr: f.address || '' }) >= 2) pick.add(msg.uid);
+        }
+      } catch (e) {
+        console.warn(`Gmail: header chunk ${i / 1000 + 1} failed (${String(e.message).slice(0, 80)}); continuing with the rest`);
+      }
     }
     // 2) Plus mail whose text says an outcome even when the subject is vague ("An update from Acme").
     for (const uid of (await c.search({ gmraw: `newer_than:${days}d ${QUERY}` }, { uid: true })) || []) pick.add(uid);
-    const uids = [...pick].sort((a, b) => a - b).slice(-limit);
-    if (uids.length) for await (const msg of c.fetch(uids, { uid: true, internalDate: true, source: true }, { uid: true })) mails.push(await parseMail(msg));
+    // 3) Read every job-related email, in batches: one failed batch never loses the others.
+    const uids = [...pick].sort((a, b) => a - b);
+    for (let i = 0; i < uids.length; i += 150) {
+      try {
+        for await (const msg of c.fetch(uids.slice(i, i + 150), { uid: true, internalDate: true, source: true }, { uid: true })) {
+          try {
+            mails.push(await parseMail(msg));
+          } catch {
+            // a malformed message (weird encoding) is skipped, not fatal
+          }
+        }
+      } catch (e) {
+        console.warn(`Gmail: message batch ${i / 150 + 1} failed (${String(e.message).slice(0, 80)}); continuing`);
+      }
+    }
   } finally {
     await c.logout().catch(() => {});
   }
 
-  // 3) What each email is: rules first, the AI for the uncertain ones.
+  // 4) What each email is: rules first, the AI for the uncertain ones.
   const seen = new Set([...apps.flatMap((a) => (a.mail || []).map((x) => x.id)), ...ignore]);
   const fresh = mails.filter((m) => !seen.has(m.id)).sort((a, b) => new Date(a.date) - new Date(b.date));
   const kinds = new Map();
@@ -238,7 +267,7 @@ export async function traceOutcomes(apps, { since, limit = 600, ignore = [] } = 
     }
   }
 
-  // 4) Each job email goes to its application; outcomes for jobs you didn't track become new applications,
+  // 5) Each job email goes to its application; outcomes for jobs you didn't track become new applications,
   //    and later emails from the same company follow them.
   const updates = [];
   const created = [];

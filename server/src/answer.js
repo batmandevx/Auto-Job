@@ -99,6 +99,30 @@ function cgpaScaleValue(profile) {
   return (raw.match(/\/\s*(\d+(?:\.\d+)?)/) || [])[1];
 }
 
+// Eightfold-style voluntary self-ID ("Voluntary Self-Identification of Disability", PayPal / Eightfold forms):
+// the statements come as one checkbox each or one group of options ("I DON'T WISH TO ANSWER (India)",
+// "NO, I DON'T HAVE A DISABILITY (India)", "YES, I HAVE A DISABILITY (or previously had a disability) (India)").
+// The statement matching your saved answer is picked; with nothing saved, "I don't wish to answer" is the safe default.
+const SELFID_SECTION = /self[- ]?identification|voluntary|disability/i;
+function selfIdValue(field, profile) {
+  if (!SELFID_SECTION.test(`${field.section || ''} ${field.label}`)) return undefined;
+  const want = String(profile.answers?.disabilityStatus || '').trim().toLowerCase();
+  const yes = /^yes\b/.test(want);
+  const no = /^no\b/.test(want);
+  const isDecline = (t) => /don'?t wish to answer|prefer (not|to)|decline|not wish/i.test(t);
+  const isNo = (t) => /^(no\b|i\s+don'?t have)/i.test(t) || /don'?t have a disability/i.test(t);
+  const isYes = (t) => /^yes\b/i.test(t) || (/\bhave a disability\b/i.test(t) && !/don'?t\b/i.test(t));
+  const pickFrom = (opts) => (yes ? opts.find(isYes) : no ? opts.find(isNo) : opts.find(isDecline));
+  if (field.options?.length && (field.options.some((o) => /disability/i.test(o)) || /disability/i.test(field.label))) return pickFrom(field.options);
+  if (field.type === 'checkbox') {
+    const t = String(field.label);
+    if (isDecline(t)) return !(yes || no);
+    if (isNo(t)) return no;
+    if (isYes(t)) return yes;
+  }
+  return undefined;
+}
+
 // Common fields are filled from the profile directly: instant, free and never hallucinated.
 // Order matters: more specific patterns first. Everything else goes to the model in one batch.
 const RULES = [
@@ -122,18 +146,20 @@ const RULES = [
   [/(aware|understand|acknowledge|agree).{0,80}(expected|required) to work (in|from) india|expected to work in india/i, () => 'Yes'],
   [/willing (and able )?to travel|able to travel|travel (as|per) (the job|required|needed)|open to travel/i, () => 'Yes'],
   [/current\s*(company|employer|organi[sz]ation)(\s*name)?/i, (p, f) => (/^\s*yes/i.test(p.answers.currentlyEmployed || '') || f.required ? String(p.experience?.[0]?.company || '').split(',')[0] || undefined : null)],
-  [/^(today'?s\s*)?date$|signature date|date signed/i, (p, f) => toHintFormat(localToday(), `${f.placeholder || ''} ${f.label}`, 'MM/DD/YYYY')],
+  [/^(today'?s\s*)?date$|signature date|date signed|enter today'?s date|today'?s date/i, (p, f) => (f.type === 'date' ? localToday() : toHintFormat(localToday(), `${f.placeholder || ''} ${f.label}`, 'MM/DD/YYYY'))],
   // Screening questions with fixed answers from your profile.
   [/non-?compet|non-?solicit|(agreement|bond|contract).{0,80}restrict|restrict.{0,40}(ability|perform)/i, () => 'No'],
   [/sponsor(ship)?/i, (p, f, job) => (abroad(f, job) ? 'Yes' : 'No')],
   [/younger than 18|under (the age of )?18|below 18|less than 18|minor\b/i, () => 'No'],
   [/(18|eighteen) (years|yrs)( of age)? or (older|above|over)|at least 18|over (the age of )?18/i, () => 'Yes'],
-  [/(were|are|have) you (ever |currently )?(been |worked as )?(a |an )?(former )?government (employee|official|servant)|ever (a|been a|worked as a) government|civil service or military/i, (p, f) => (/family|relative|spouse|parent|sibling/i.test(f.label) ? undefined : 'No')],
+  [/(were|are|have) you (ever |currently |now )?(been |worked as )?(a |an )?(former |current(ly)? |present )?government (employee|official|servant)|ever (a|been a|worked as a) government|civil service or military/i, (p, f) => (/family|relative|spouse|parent|sibling/i.test(f.label) ? undefined : 'No')],
   // Conflict-of-interest questions are facts about you, never guessed: no family at the company, never worked for it
   // (unless it is in your experience), happy to work from the posted location.
   // Only relationship *questions* ("Do you have any relatives working here?"), never "Family name" or "Spouse name".
   [/(family|relative|spouse|in-law|related to).{0,240}(relationship|related|relatives?|member|employ|work(s|ing)?|board|director|reporting)|(relationship|related|relatives?).{0,120}(family|employee|board|director|reporting|work(s|ing)? (at|for|in))/i, () => 'No'],
   [/(currently|previously|in the past|ever).{0,60}(worked|employed|been an? (employee|contractor)).{0,80}(consult|affiliat|subsidiar|project|this company|for us|with us|any of)/i, (p, f, job) => (worksHere(p, job, f.label) ? 'Yes' : 'No')],
+  // "Are you a previous Employee of PayPal or any of its subsidiaries?" (Eightfold): Yes only if your profile says you worked there.
+  [/previous(ly)?\b.{0,60}\b(employee|employed|staff)|former(ly)?\b.{0,60}\b(employee|staff|member of)|ex-?employee/i, (p, f, job) => (worksHere(p, job, f.label) ? 'Yes' : 'No')],
   // Work authorisation: you're an Indian citizen, so Yes for India, and No for other countries
   // (the answers say you hold no visa for them).
   [/legally (authori[sz]ed|eligible|permitted|allowed) to work|authori[sz]ed to work|right to work|eligible to work/i, (p, f, job) => (abroad(f, job) ? 'No' : 'Yes')],
@@ -157,7 +183,7 @@ const RULES = [
   [/^(full\s*)?name\b|your\s*name|legal\s*name|candidate\s*name|applicant\s*name/i, (p) => p.name],
   [/confirm.*e-?mail|e-?mail.*(again|confirm)/i, (p) => p.email],
   [/e-?mail/i, (p) => p.email],
-  [/country\s*(phone\s*)?code|dial(l)?ing\s*code|isd/i, (p) => (p.phone.match(/^\+\d{1,3}/) || ['+91'])[0]],
+  [/^code$|country\s*(phone\s*)?code|dial(l)?ing\s*code|isd/i, (p) => (p.phone.match(/^\+\d{1,3}/) || ['+91'])[0]],
   [/phone\s*ext|^ext(ension)?\b|extension/i, () => null], // left empty on purpose (desk lines only), never asked of the AI
   [/phone|mobile|contact\s*(no|number)|cell|whatsapp/i, (p, f) => (f.codeBeside ? digits(p.phone).slice(-10) : p.phone)],
   [/linked\s*in/i, (p) => p.links?.linkedin],
@@ -181,8 +207,13 @@ const RULES = [
   [{ test: (l) => LANG_NAME.test(l) }, (p, f) => (/language/i.test(f.section || '') || f.entry ? spoken(p)[(f.entry || 1) - 1] : spoken(p)[0])],
   [{ test: (l) => LANG_LEVEL.test(l) }, (p, f) => (/language/i.test(`${f.section || ''} ${f.label}`) ? (nativeLang(spoken(p)[(f.entry || 1) - 1]) ? 'Native' : 'Fluent') : undefined)],
   [HEAR_LABEL, (p) => p.answers?.howDidYouHear || 'LinkedIn'],
+  // "Are you a referral of a) an existing merchant, b) a third party, c) a government official?" (PayPal): not referred.
+  [/\bare you a referral\b|\breferred (you|by)\b|\breferral of (an?|the )?(existing|potential)/i, () => 'No'],
   [/^(languages?\s*(known|spoken)?|spoken\s*languages?|languages you (speak|know))$/i, (p) => p.personal.languages],
   [/are you interested|interested in (this|the) (opportunity|role|project)|would you like to proceed/i, () => 'Yes'],
+  // Enrollment: a degree that ends in the future means you are enrolled and intend to return after an internship.
+  [/return to (your )?(degree|university|college|studies|program)|currently enrolled|enrolled in (a|an|your)?\s*(degree|bachelor)|intend to (return|continue|resume)|pursuing (your |a |an )?(degree|bachelor|b\.?\s*tech|master)|returning to (college|university)/i, (p) => (graduated(p) ? undefined : 'Yes')],
+  [/completed your (degree|bachelor'?s?|graduation)|already graduated|degree (completed|received|conferred)/i, (p) => (graduated(p) ? 'Yes' : 'No')],
   [/enrolled in or.*completed.*bachelor|completed.*bachelor.*degree|have.*bachelor.*degree/i, (p) => (p.education || []).length ? 'Yes' : undefined],
   [/computer science fundamentals|object[- ]oriented|operating systems|algorithms|data structures|complexity analysis/i, (p) => yesNo(p.answers.computerScienceFundamentals)],
   [/active (arrears|backlogs?)|backlogs?|arrears?/i, (p) => yesNo(p.answers.activeBacklogs)],
@@ -205,7 +236,7 @@ const RULES = [
   [/country.*(eligible|available)|available.*country|location.*eligible/i, (p) => p.personal.country || p.answers.currentLocation],
   [/commit.*(hours?|week)|hours?.*(per|\/)\s*week|minimum.*hours?/i, (p) => p.answers.availability],
   [/\bc?gpa\b|grade\s*point|cumulative\s*grade/i, (p) => p.education?.[0]?.gpa],
-  [/^(gender|sex|gender identity)\b/i, (p) => p.personal.gender || p.answers.gender],
+  [/^\s*gender\b|\bgender identity\b|^\s*sex\b/i, (p) => p.personal.gender || p.answers.gender],
   [/pronouns?/i, (p) => p.personal.pronouns],
   [/marital\s*status/i, (p) => p.personal.maritalStatus],
   [/address\s*(line)?\s*1|street\s*address|^address$|permanent\s*address|residential\s*address/i, (p) => noRelation(p.personal.addressLine1)],
@@ -268,6 +299,12 @@ const normT = (x) => String(x ?? '').toLowerCase().replace(/[^a-z0-9+]/g, '');
 // A box that only takes a number: type=number, a numeric placeholder ("850,000"), or a CTC/salary amount field.
 const numericField = (f) => f.type === 'number' || /^[\d,.\s]+$/.test(String(f.placeholder || '').trim()) || /ctc|lakh|salary|amount|in_days|days/i.test(f.name || '');
 const yesNo = (v) => (/^\s*no\b/i.test(String(v)) ? 'No' : /^\s*yes\b/i.test(String(v)) ? 'Yes' : undefined);
+// True when the newest education entry ends in a future year (still enrolled / not yet graduated).
+const graduated = (p) => {
+  const years = (p.education || []).map((e) => Number(String(e.end || '').match(/(20\d\d)/)?.[1])).filter(Boolean);
+  const last = years.length ? Math.max(...years) : 0;
+  return last > 0 && last < new Date().getFullYear();
+};
 const fresher = (p) => /^\s*yes/i.test(p.answers.isFresher || '');
 
 const DEGREE_LADDERS = [
@@ -314,6 +351,8 @@ function ruleValue(field, profile, job) {
   const last = clean(String(field.label).split('›').pop());
   const linkRow = LINK_LABEL.test(last) || LANG_NAME.test(last) || /fluent in this language/i.test(last) || (LANG_LEVEL.test(last) && /language/i.test(`${field.section || ''} ${field.label}`));
   if (field.entry > 1 && !linkRow) return undefined; // later entries of repeated sections: the AI maps them by order (link rows: next link)
+  const selfId = selfIdValue(field, profile);
+  if (selfId !== undefined) return selfId;
   // Dropdowns too, as long as the profile fact is one of the real options ("2027" in a passout-year list).
   if (CHOICE.includes(field.type) && field.options?.length) {
     if (asksPostgradOnly(field.label) && !hasPostgrad(profile)) return field.options.find((o) => NA_OPTION.test(String(o).trim()));
@@ -364,6 +403,7 @@ function ruleValue(field, profile, job) {
     return (
       field.options.find((o) => normT(o) === want) ||
       field.options.find((o) => want.length > 2 && (normT(o).startsWith(want) || normT(o).includes(want))) ||
+      field.options.find((o) => /^\+\d{1,3}$/.test(String(v).trim()) && normT(o).endsWith(want)) || // "+91" -> "India +91"
       field.options.find((o) => normT(o).length === 1 && want.startsWith(normT(o))) // "M" / "F" style lists
     );
   }
@@ -489,6 +529,8 @@ export async function answerFields({ fields, profile, job, coverLetter, errors =
       consentIds.push(f.id);
     }
     if (v === undefined && !err && f.type === 'checkbox' && /\bfresher\b|no (prior|work) experience|i have no experience/i.test(f.label)) v = fresher(profile);
+    // "I have a preferred name" (Eightfold legal-name section): you don't, so the box stays unticked.
+    if (v === undefined && !err && f.type === 'checkbox' && /\b(i have|do you have) a preferred name\b/i.test(f.label)) v = false;
     // Agreement dropdowns / radios ("I understand that… *" with I Agree / I Disagree): pick the agree option.
     if (v === undefined && !err && f.options?.length && CONSENT.test(f.label)) {
       const agree = f.options.find((o) => AGREE_OPTION.test(String(o).trim()) && !/disagree|not|don/i.test(o));

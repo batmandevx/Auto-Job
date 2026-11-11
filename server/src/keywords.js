@@ -68,7 +68,7 @@ Concurrency,Multithreading,Unit testing,Integration testing,TDD,PyTest,Jest,Sele
 Agile,Scrum,Jira,Payments,Fintech,Security,OAuth,JWT,Blockchain,Solidity,Android,iOS,React Native,Flutter`.split(',').map((t) => t.trim()).filter(Boolean);
 
 // Not skills: requirements about experience, process or attitude.
-const NOT_A_SKILL = /experience|review|on-?call|ownership|communication|team|fundamental|graduate|degree|b\.?tech|production systems?|backend services?|clean code|problem.solving|passion|startup|fast-paced|end to end|years?/i;
+const NOT_A_SKILL = /experience|review|on-?call|ownership|communication|team|fundamental|graduate|degree|b\.?tech|production systems?|backend services?|clean code|problem.solving|passion|startup|fast-paced|end to end|years?|^\s*(power|area)\s*$/i;
 
 export const norm = (s) => String(s || '').toLowerCase().replace(/\+\+/g, 'pp').replace(/#/g, 'sharp').replace(/[^a-z0-9]/g, '');
 

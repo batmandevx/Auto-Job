@@ -110,9 +110,10 @@ Auto Job does the repetitive part and leaves the decisions to you:
 - **🔐 Reads OTPs from your Gmail and clicks verify links, automatically.** When a portal says "enter the code we emailed you", Auto Job finds that email, types the code (including 6 separate boxes) and carries on. When it says "check your inbox", it opens the verification link and fills the next page. Inbox access is read-only.
 - **📨 Applies by email.** When a post just says "send your CV to hr@…", it drafts the email with the files attached and sends it from your Gmail after you confirm.
 - **🗂 Scans job boards.** It scans your favourite boards, merges every posting into one list ranked by how well each fits you, and applies to the ones you tick, one after another. It skips jobs you already applied to, stops at 25 a day and paces itself.
-- **🏆 Finds hackathons** from 10 platforms (Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH, ETHGlobal), ranked *Best for you* by your skills and themes, with PPI / PPO and internship rewards flagged.
+- **🏆 Finds hackathons** from 10 platforms (Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.build, Taikai, HackIndia, MLH, ETHGlobal), ranked *Best for you* by your skills and themes, with PPI / PPO and internship rewards flagged.
 - **📬 Reads your whole inbox for your job search.** Every email in the last 90 days is sorted; confirmations, tests, interviews, rejections and offers update the tracker on their own, applications you never tracked are added, and each card keeps its emails as a timeline. It checks again every 3 hours.
-- **📊 Tracks your applications** from *To apply* to *Offer*, with insights: how many heard back, how many reached interview, where rejections happen.
+- **📊 Tracks your applications** from *To apply* to *Offer*, with insights: how many heard back, how many reached interview, where rejections happen. It warns you when a job you open is already in the tracker.
+- **📗 Exports everything to Excel.** One file with three colour-coded sheets: your Jobs list (match score green / amber / red), open hackathons (days left, mode, prize, perks) and your tracker (status colours), each row with a clickable **Apply ↗** link. CSV of the tracker too.
 - **✉️ Drafts follow-ups and 🎯 prepares you for interviews.** A short follow-up email for applications that went quiet (you send it), and a one-page brief when an interview is coming: likely questions, your stories, questions to ask.
 - **🐞 Reports a form that went wrong.** One button saves a privacy-scrubbed copy of the form, which becomes a test so the fix stays fixed.
 - **🩺 Heals itself.** Every field that fails or that the site rejects goes up one ladder: normal fill → real typing → real click → a corrected value from the AI. It checks after every step, remembers per site what worked, and hands you a "Needs you" list with a **Show me** button for anything it couldn't fix.
@@ -142,7 +143,8 @@ flowchart LR
 | Concern | How Auto Job handles it |
 |---|---|
 | **Where is my data?** | In `data/` on your laptop: profile, Aadhaar / PAN / marksheets, resumes, tracker. There's no Auto Job account and no Auto Job cloud. |
-| **Who can reach the server?** | Only your own machine. It listens on `127.0.0.1` and refuses requests from any website other than the extension and localhost, so a page you visit can't read your profile. |
+| **Who can reach the server?** | Only your own machine. It listens on `127.0.0.1`, refuses requests from any website other than the extension and localhost (look-alikes such as `localhost.evil.com` included), and refuses any `Host` other than `localhost` / `127.0.0.1`, so a page you visit can't read your profile, even with DNS rebinding. Set `EXTENSION_ID` to allow only your copy of the extension. |
+| **What if it crashes mid-save?** | Files are written to a temp file and renamed, so a crash never leaves half a profile. A dated copy of your profile and tracker is kept each day in `data/backups/` (last 7). |
 | **My API key and Gmail password?** | Kept in `server/.env` on your laptop, git-ignored, and never sent to the browser or any web page. |
 | **What does the AI see?** | Only what it needs: the job description and the questions it has to answer. Choose **Ollama** and even that never leaves your laptop. |
 | **Gmail access?** | An App Password you can revoke in one click. Auto Job reads codes and verification links and never deletes or moves mail. It sends only for **Apply by email**, after you press Send twice. |
@@ -309,7 +311,7 @@ flowchart LR
         PDF["pdf.js<br/>one-page resume and cover letter PDFs"]
         LLM["llm.js<br/>model chain · quota rest · fallback"]
         MAIL["mail.js<br/>Gmail: codes, links, send"]
-        HACK["hackathons.js<br/>8 platforms"]
+        HACK["hackathons.js<br/>10 platforms"]
         STORE["store.js<br/>profile · tracker · documents"]
         API --> ANS & TAI & PDF & MAIL & HACK & STORE
         ANS --> LLM
@@ -429,7 +431,7 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus, **Internships 2027** — 600+ curated tech internships from [zapplyjobs](https://github.com/zapplyjobs/Internships-2027), parsed by the server every 10 minutes with location, posted time and visa-sponsorship flags), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
 2. **Scan all my boards** opens each one and merges every posting into one list: *Role · Company · location · pay*.
 3. Filter titles, tick the jobs you want (**Select all shown** helps), then press **Start applying**. Auto Job opens each job, applies, fills and waits for your review. **Skip this job** moves on.
-4. **☆ Save to tracker** saves ticked jobs as *To apply*.
+4. **☆ Save to tracker** saves ticked jobs as *To apply*. **📊 Excel** exports the list shown, best match first, with Apply links.
 5. **+ Save board** keeps any link as a one-tap board.
 6. **Copy Wellfound script:** copies a console script that applies to Wellfound jobs with a personal message. Unlike the rest of Auto Job, **this script submits by itself**, so try it first with `dryRun: true`.
    - **Your details:** the public script holds only placeholders, in a clearly marked **YOUR DETAILS** block at the top (name, one-line intro, highlights, links). The Copy button fills that block from your Auto Job profile. Or edit it yourself: save your copy as `extension/scripts/wellfound-autoapply.local.js`. *.local.js files are git-ignored, so your details are never committed, and the Copy button always prefers that file.
@@ -440,14 +442,16 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 
 ### Hacks tab
 
-- **10 platforms:** Devpost (every open page), Unstop (every page), Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH and ETHGlobal. About 400+ open hackathons at a time, cached for 30 minutes.
+- **10 platforms:** Devpost (every open page), Unstop (every page), Devfolio, HackerEarth, Hack2skill, lablab.build, Taikai, HackIndia, MLH and ETHGlobal. About 400+ open hackathons at a time, cached for 30 minutes.
 - **✨ Best for you** (the default sort): ranks by your skills named in the hackathon, its themes against your profile, PPI / PPO and internship rewards, whether you can take part (online or in India) and time left to register. Each card shows what matched.
 - **Filters:** theme (AI / ML, Web3, FinTech, Health, Climate, Security, Hardware / IoT…), closes this week, online / in person / hybrid, India / online, 🎯 PPI / PPO, saved only, and search.
 - Each card has the prize, mode, location, team size, themes and deadline.
 - **🎯 PPI / PPO:** shows only hackathons whose rewards include a pre-placement interview (PPI), a pre-placement offer (PPO), an internship or a hiring track, with offers listed first. Each card shows its perks as green badges (hover for the reward text). On Unstop these come from the organiser's own PPI / PPO flags; elsewhere from the reward text, title and tags.
 - **Search** (AI, web3, fintech, a city…), filter **Online / In person / Hybrid**, **India / online** only, **Saved only**, and sort by **best for you**, **closing soon**, **biggest prize** or **most popular**.
 - Deadlines turn **red** under 24 hours and **amber** under 4 days. **☆** saves one to your shortlist.
-- Results are cached for 30 minutes and kept on disk. If a platform is down, its last results stay and its chip shows "!".
+- Results are cached for 30 minutes and kept on disk. If a platform is down, or suddenly returns no hackathons (its page changed), its last results stay and its chip shows "!".
+- **📅** on a card downloads a calendar file (.ics) for the deadline with a reminder a day before; it opens in Apple Calendar, Outlook or Google Calendar.
+- **📊 Excel** downloads the colour-coded workbook (Jobs, Hackathons, Tracker) with Apply links.
 
 ### Tracker tab
 
@@ -467,6 +471,7 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 - **On each card:** the latest email ("📬 Rejected · 'Update on your application' · 2 d ago", hover for the sentence), and ⏳ *No reply in N days: consider a follow-up* after 12 quiet days. **📄 Resume sent** and **✉️ Cover letter** open the exact PDFs you sent.
 - **Insights:** how many applications heard back, how many reached an interview, rejections with the median days to a rejection, and the stage you were stopped at (screening, assessment or interview).
 - It runs by itself when you open the Tracker, at most every 6 hours, and only reads mail newer than your first tracked application.
+- **📊 Excel** and **⬇ CSV** export the tracker (Excel adds the Jobs and Hackathons sheets). In the CSV, cells that start with `= + - @` get a `'` so a spreadsheet never runs them as formulas.
 
 - Statuses: **To apply → Applied → Assessment → Interview 1 / 2 / 3 → HR → Offer → Accepted**, plus **Rejected** and **Withdrawn**.
 - Jobs you submit through Auto Job, or apply to by email, are added automatically as *Applied*, with the tailored resume's file name.
@@ -712,6 +717,7 @@ All settings live in `server/.env` (copy `server/.env.example`):
 | Setting | Default | What it does |
 |---|---|---|
 | `PORT` | `8787` | Server port (change it in Profile → Server too) |
+| `EXTENSION_ID` | (any extension) | Your Auto Job ID from `chrome://extensions`: only that extension may call the server |
 | `LLM_PROVIDER` | `ollama` | `gemini`, `ollama`, `openai` (any OpenAI-compatible API) or `anthropic` |
 | `GEMINI_API_KEY` | — | Your Gemini key |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Fast model for form answers |
@@ -753,7 +759,8 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | POST | `/api/email/draft` · `/api/email/send` | Draft and send an application email |
 | GET | `/api/email/check` · `/api/mail/status` | Gmail connection status |
 | GET | `/api/otp` | Wait for a one-time code or verification link |
-| GET | `/api/hackathons` | Open hackathons from 8 platforms |
+| GET | `/api/hackathons` | Open hackathons from 10 platforms |
+| POST | `/api/export` | Excel workbook: the Jobs list you send, open hackathons, the tracker |
 | GET | `/api/internships` | The Internships 2027 list (zapplyjobs repo), parsed into jobs, cached 10 min |
 | GET / POST / PATCH / DELETE | `/api/applications[/:id]` | The tracker |
 | POST | `/api/applications/:id/followup` · `/api/applications/:id/prep` | A follow-up email draft, an interview prep brief |
@@ -781,10 +788,11 @@ Auto-Job/
 │   │   ├── prompts.js         every AI prompt
 │   │   ├── llm.js             Gemini / Ollama / OpenAI / Claude + named fallback providers, quota handling
 │   │   ├── mail.js            Gmail IMAP / SMTP
-│   │   ├── hackathons.js      8 hackathon platforms
+│   │   ├── hackathons.js      10 hackathon platforms
+│   │   ├── export.js          the colour-coded Excel workbook
 │   │   ├── outcomes.js        Gmail outcome tracing: rejections, interviews, assessments, offers
 │   │   ├── research.js        company research: website, Wikipedia / Wikidata, news, sources
-│   │   └── store.js           profile, documents, tracker on disk
+│   │   └── store.js           profile, documents, tracker on disk (atomic writes, daily backups)
 │   ├── test/                  test forms that copy real portals
 │   └── .env.example
 ├── docs/screenshots/          the images in this README (made-up demo profile)

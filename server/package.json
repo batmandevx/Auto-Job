@@ -4,7 +4,7 @@
   "description": "Local server for Auto Job: tailors ATS-friendly resumes and cover letters, answers application forms from your profile, reads email OTPs. Runs on your own laptop.",
   "main": "index.js",
   "scripts": {
-    "test": "node test/amazon-answers.mjs && node test/panel-smoke.mjs && node test/run-all.mjs",
+    "test": "node test/security.mjs && node test/export.mjs && node test/amazon-answers.mjs && node test/panel-smoke.mjs && node test/run-all.mjs",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
@@ -26,6 +26,7 @@
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",
+    "exceljs": "^4.4.0",
     "express": "^4.22.3",
     "imapflow": "^2.10.0",
     "mailparser": "^3.14.1",

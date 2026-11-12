@@ -458,6 +458,7 @@ button.chip.learn { background: color-mix(in srgb, var(--accent) 12%, transparen
 .hack .save { position: absolute; top: 8px; right: 8px; border: 0; background: none; font-size: 16px; cursor: pointer; color: var(--muted); transition: transform 0.2s var(--ease); }
 .hack .save:hover { transform: scale(1.2); }
 .hack .save.on { color: #f5b301; }
+.hack .save.cal { top: 32px; font-size: 14px; }
 @keyframes pulseText { 50% { opacity: 0.6; } }
 
 .code-box { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: var(--ok-soft); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); animation: pop 0.4s var(--ease) both; }

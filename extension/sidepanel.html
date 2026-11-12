@@ -181,6 +181,7 @@
         <div class="row">
           <button id="startQueue" class="btn primary">Start applying</button>
           <button id="skipJob" class="btn ghost">Skip this job</button>
+          <button class="btn ghost xlsx-export" data-sheet="jobs" title="Download the jobs shown as a colour-coded Excel file with Apply links">📊 Excel</button>
           <button id="saveSelected" class="btn ghost" title="Add ticked jobs to your Tracker as “To apply”">☆ Save to tracker</button>
         </div>
         <div id="queueOut" class="hint"></div>
@@ -260,8 +261,11 @@
     <section id="tab-hacks" class="tab">
       <div class="card hero">
         <div class="row between" style="margin:0">
-          <div><h3 class="card-title" style="margin:0">Hackathons</h3><div class="hint" style="margin:2px 0 0" id="hackSummary">Devpost · Unstop · Devfolio · HackerEarth · Hack2skill · lablab.ai · Taikai · HackIndia · MLH · ETHGlobal</div></div>
-          <button id="refreshHacks" class="btn primary sm">↻ Refresh</button>
+          <div><h3 class="card-title" style="margin:0">Hackathons</h3><div class="hint" style="margin:2px 0 0" id="hackSummary">Devpost · Unstop · Devfolio · HackerEarth · Hack2skill · lablab.build · Taikai · HackIndia · MLH · ETHGlobal</div></div>
+          <div class="row" style="margin:0;gap:6px">
+            <button class="btn ghost sm xlsx-export" data-sheet="hackathons" title="Download open hackathons as a colour-coded Excel file with Apply links">📊 Excel</button>
+            <button id="refreshHacks" class="btn primary sm">↻ Refresh</button>
+          </div>
         </div>
         <div class="platforms" id="hackPlatforms"></div>
       </div>
@@ -299,6 +303,8 @@
           <h3 class="card-title" style="margin:0">Your applications</h3>
           <div class="row" style="margin:0;gap:6px">
             <button id="traceGmail" class="btn primary sm" title="Read your Gmail (read-only) for rejections, interview invites, assessments, offers and confirmations, and update the tracker">📬 Check Gmail</button>
+            <button class="btn ghost sm xlsx-export" data-sheet="tracker" title="Download your tracker as a colour-coded Excel file with Apply links">📊 Excel</button>
+            <button id="exportCsv" class="btn ghost sm" title="Download your applications as a spreadsheet (CSV)">⬇ CSV</button>
             <button id="refreshTracker" class="btn ghost sm">↻ Refresh</button>
           </div>
         </div>

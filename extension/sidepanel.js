@@ -71,7 +71,7 @@ function toast(msg, bad = false) {
 }
 
 // Every request has a time limit, so a slow AI or network shows an error instead of an endless spinner.
-const API_TIMEOUTS = [[/^\/api\/profile\/import/, 300000], [/^\/api\/(tailor|cover-letter)/, 180000], [/^\/api\/otp/, 200000], [/^\/api\/(email|answer)/, 100000], [/^\/api\/hackathons/, 90000]];
+const API_TIMEOUTS = [[/^\/api\/profile\/import/, 300000], [/^\/api\/(tailor|cover-letter)/, 180000], [/^\/api\/otp/, 200000], [/^\/api\/(email|answer)/, 100000], [/^\/api\/(hackathons|export)/, 90000]];
 async function api(path, opts = {}) {
   const ms = API_TIMEOUTS.find(([re]) => re.test(path))?.[1] || 30000;
   const res = await fetch(SERVER + path, {
@@ -83,6 +83,7 @@ async function api(path, opts = {}) {
     if (e.name === 'TimeoutError') throw new Error(`The server took over ${Math.round(ms / 1000)}s on this step. Try again, or check the server window.`);
     throw new Error('Server offline. Run "npm start" in the server folder.');
   });
+  if (opts.raw && res.ok) return res.blob();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
   return data;
@@ -252,7 +253,17 @@ async function readJob() {
   $('#jobMeta').textContent = [best.company, best.title].filter(Boolean).join(' · ');
   showEmails(frames.flatMap((f) => f.result.emails || []).filter((e, i, a) => a.indexOf(e) === i));
   setStep('job', true);
+  warnIfTracked(best);
   return best;
+}
+
+// Applying twice to the same job looks careless to recruiters: say so when this one is already in the tracker.
+async function warnIfTracked(job) {
+  const apps = state.apps.length ? state.apps : (await api('/api/applications').catch(() => ({}))).items || [];
+  const key = (a) => `${a.company || ''}|${a.title || ''}`.toLowerCase().trim();
+  const page = (u) => String(u || '').split('#')[0];
+  const dup = apps.find((a) => a.status !== 'saved' && ((a.url && page(a.url) === page(job.url)) || (a.company && a.title && key(a) === key(job))));
+  if (dup) toast(`Already in your tracker: ${STATUS[dup.status]?.label || dup.status}${dup.appliedAt ? `, ${ago(dup.appliedAt)}` : ''}`, true);
 }
 
 const currentJob = () => ({
@@ -1760,7 +1771,7 @@ const PLAT = {
   devfolio: { name: 'Devfolio', c: '#3770ff' },
   hackerearth: { name: 'HackerEarth', c: '#7c8cff' },
   hack2skill: { name: 'Hack2skill', c: '#e2512c' },
-  lablab: { name: 'lablab.ai', c: '#7c3aed' },
+  lablab: { name: 'lablab.build', c: '#7c3aed' },
   taikai: { name: 'Taikai', c: '#ff2d55' },
   hackindia: { name: 'HackIndia', c: '#ff7a00' },
   mlh: { name: 'MLH', c: '#1d539f' },
@@ -1864,7 +1875,7 @@ function renderHacks() {
   if (sort === 'popular') list.sort((a, b) => (b.participants || 0) - (a.participants || 0));
   const fit = new Map(list.map((h) => [h.id, hackMatch(h)]));
   if (sort === 'match') list.sort((a, b) => fit.get(b.id).score - fit.get(a.id).score || (a.deadline ? new Date(a.deadline) : far) - (b.deadline ? new Date(b.deadline) : far));
-  $('#hackSummary').textContent = `${list.length} open hackathons${state.hacks.length !== list.length ? ` (of ${state.hacks.length})` : ''} · updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  $('#hackSummary').textContent = `${list.length} open hackathons${state.hacks.length !== list.length ? ` (of ${state.hacks.length})` : ''} · only events still open (finished ones are excluded) · updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   $('#hackList').innerHTML = list.length
     ? list
         .slice(0, 150)
@@ -1881,6 +1892,7 @@ function renderHacks() {
               <div class="m">${[h.organizer && h.organizer !== p.name ? esc(h.organizer) : '', h.mode ? esc(h.mode) : '', h.location ? `📍 ${esc(h.location)}` : '', h.participants ? `👥 ${Number(h.participants).toLocaleString()}` : '', h.stage ? esc(h.stage) : ''].filter(Boolean).join(' · ')}</div>
               <div class="badges">${(() => { const m = fit.get(h.id); const why = [...m.hits, ...m.themes.filter((t) => !m.hits.length)].slice(0, 3); return why.length ? `<span class="hb match" title="Matches your profile">✨ ${esc(why.join(', '))}</span>` : ''; })()}<span class="hb plat-b">${p.name}</span>${h.prize ? `<span class="hb prize">🏆 ${esc(h.prize)}</span>` : ''}${(h.perks || []).map((k) => `<span class="hb perk" title="${esc(h.rewards || k)}">🎯 ${esc(k)}</span>`).join('')}${cl ? `<span class="hb ${cl.cls}">⏰ ${cl.text}</span>` : ''}${(h.tags || []).slice(0, 3).map((t) => `<span class="hb">${esc(t)}</span>`).join('')}</div>
             </div>
+            ${h.deadline || h.start ? `<button class="save cal" data-cal="${esc(h.id)}" title="Add to your calendar (reminder a day before)">📅</button>` : ''}
             <button class="save ${state.savedHacks.has(h.id) ? 'on' : ''}" data-save="${esc(h.id)}" title="Save">${state.savedHacks.has(h.id) ? '★' : '☆'}</button>
           </div>`;
         })
@@ -2123,6 +2135,23 @@ $('#emailFound').addEventListener('click', (e) => {
   if (e.target.dataset.email) $('#emailTo').value = e.target.dataset.email;
 });
 on('#refreshTracker', loadTracker);
+// Tracker as CSV for Excel / Sheets. Cells starting with = + - @ are prefixed with ' so a spreadsheet never runs them as formulas.
+const csvCell = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
+// Excel: each tab's button exports that tab's sheet (data-sheet), colour-coded with Apply links.
+document.querySelectorAll('.xlsx-export').forEach((b) => b.addEventListener('click', busy(b, async () => {
+  if (!state.apps.length) state.apps = ((await api('/api/applications').catch(() => ({}))).items || []).filter((a) => a.id);
+  const jobs = visibleJobs().map(({ j, m }) => ({ ...j, score: m.score, status: state.apps.find((x) => x.url && j.url && x.url.split('#')[0] === j.url.split('#')[0])?.status }));
+  const sheet = b.dataset.sheet;
+  const blob = await api('/api/export', { method: 'POST', body: { jobs: sheet === 'jobs' ? jobs : [], only: sheet }, raw: true });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `auto-job-${sheet}-${new Date().toISOString().slice(0, 10)}.xlsx` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`Excel file saved: ${sheet}`);
+})));
+$('#exportCsv').addEventListener('click', () => {
+  const cols = ['company', 'title', 'status', 'appliedAt', 'updatedAt', 'location', 'url', 'via', 'contact', 'notes'];
+  saveFile(`applications-${new Date().toISOString().slice(0, 10)}.csv`, [cols, ...state.apps.map((a) => cols.map((c) => a[c]))].map((r) => r.map(csvCell).join(',')).join('\r\n'), 'text/csv');
+});
 on('#refreshHacks', () => loadHacks(true));
 $('#hackSearch').addEventListener('input', renderHacks);
 $('#hackSort').addEventListener('change', renderHacks);
@@ -2144,7 +2173,23 @@ $('#hackPlatforms').addEventListener('click', (e) => {
   state.hackOff.has(k) ? state.hackOff.delete(k) : state.hackOff.add(k);
   renderHacks();
 });
+// A calendar file (.ics) for the deadline, or the start when there's no deadline; opens in Calendar / Outlook / Google.
+const saveFile = (name, text, type) => {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+const icsTime = (d) => new Date(d).toISOString().replace(/[-:]|\.\d{3}/g, '');
+const icsText = (s) => String(s).replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r?\n/g, '\\n');
+function hackIcs(h) {
+  const at = h.deadline || h.start;
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Auto Job//Hackathons//EN', 'BEGIN:VEVENT', `UID:${icsText(h.id)}@autojob`, `DTSTAMP:${icsTime(Date.now())}`, `DTSTART:${icsTime(at)}`, `DTEND:${icsTime(new Date(at).getTime() + 1800_000)}`,
+    `SUMMARY:${icsText(`${h.deadline ? 'Closes' : 'Starts'}: ${h.title}`)}`, `DESCRIPTION:${icsText(h.url)}`, `URL:${icsText(h.url)}`,
+    'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(`Tomorrow: ${h.title}`)}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+}
 $('#hackList').addEventListener('click', (e) => {
+  const cal = state.hacks.find((h) => h.id === e.target.dataset.cal);
+  if (cal) return saveFile(`${cal.title.replace(/[^\w -]+/g, '').slice(0, 60) || 'hackathon'}.ics`, hackIcs(cal), 'text/calendar');
   const id = e.target.dataset.save;
   if (!id) return;
   state.savedHacks.has(id) ? state.savedHacks.delete(id) : state.savedHacks.add(id);

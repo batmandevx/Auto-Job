@@ -1,4 +1,4 @@
-// Hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.ai, Taikai, HackIndia, MLH and ETHGlobal,
+// Hackathons from Devpost, Unstop, Devfolio, HackerEarth, Hack2skill, lablab.build, Taikai, HackIndia, MLH and ETHGlobal,
 // normalised to one shape. Public listing endpoints / pages only; results are cached for 30 minutes.
 
 import fs from 'node:fs';
@@ -191,19 +191,63 @@ const SOURCES = {
   },
 
   async lablab() {
-    const html = await get('https://lablab.ai/ai-hackathons', { text: true });
-    const items = [];
+    const html = await get('https://lablab.build/ai-hackathons', { text: true });
+    // The Next.js payload embeds the full sortedEvents array as escaped JSON: every event with its slug,
+    // start/end dates, eventType and sign-up state. That's the richest source, so it comes first.
+    const events = [];
+    for (const part of html.split('\\"id\\":\\"').slice(1)) {
+      if (!/\\"type\\":\\"HACKATHON\\"/.test(part)) continue;
+      const name = part.match(/\\"name\\":\\"((?:[^"\\]|\\.)*?)\\"/)?.[1];
+      const slug = part.match(/\\"slug\\":\\"([a-z0-9-]+)\\"/)?.[1];
+      const start = part.match(/\\"startAt\\":\\"([^"\\]+)\\"/)?.[1];
+      const end = part.match(/\\"endAt\\":\\"([^"\\]+)\\"/)?.[1];
+      const type = part.match(/\\"eventType\\":\\"([A-Z]+)\\"/)?.[1];
+      const signup = part.match(/\\"signupActive\\":(true|false)/)?.[1];
+      if (name && slug) events.push({ name, slug, start, end, type, signup });
+    }
+    if (events.length) {
+      return events
+        .filter((e) => !e.end || new Date(e.end) > Date.now())
+        .map((e) => ({
+          title: e.name,
+          url: `https://lablab.build/ai-hackathons/${e.slug}`,
+          organizer: 'lablab.build',
+          mode: /HYBRID/i.test(e.type || '') ? 'hybrid' : 'online',
+          location: '',
+          start: iso(e.start),
+          end: iso(e.end),
+          deadline: iso(e.end),
+          status: e.signup === 'false' ? 'upcoming' : 'open',
+          prize: '',
+          prizeUSD: 0,
+          tags: ['AI'],
+        }));
+    }
+
+    // Fallback for pages served without the payload: schema.org ItemList, then plain hackathon links.
+    const items = new Map();
+    const add = (title, url) => {
+      if (title && url && !items.has(url)) items.set(url, { title, url });
+    };
     for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
       try {
         const j = JSON.parse(m[1]);
         for (const g of j['@graph'] || [j]) {
           for (const it of g.itemListElement || g.mainEntity?.itemListElement || []) {
-            if (it.url && /ai-hackathons\//.test(it.url)) items.push({ title: it.name, url: it.url });
+            if (it.url && /ai-hackathons\//.test(it.url)) add(it.name, it.url);
           }
         }
       } catch {}
     }
-    return items.map((h) => ({ ...h, organizer: 'lablab.ai', mode: 'online', location: '', start: null, end: null, deadline: null, status: 'open', prize: '', prizeUSD: 0, tags: ['AI'] }));
+    for (const m of html.matchAll(/<a[^>]+href="(\/ai-hackathons\/[a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      const [, path, inner] = m;
+      const title = stripTags(inner.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)?.[1] || '') || stripTags(inner).slice(0, 120);
+      add(title, `https://lablab.build${path}`);
+    }
+    // No hackathon markup at all means a blocked / skeleton page: error out so the retry and the last
+    // good results kick in, instead of reporting "0 hackathons" as if the market were empty.
+    if (!items.size && !/ai-hackathons\//.test(html)) throw new Error('lablab: no hackathon markup (blocked or changed page)');
+    return [...items.values()].map((h) => ({ ...h, organizer: 'lablab.build', mode: 'online', location: '', start: null, end: null, deadline: null, status: 'open', prize: '', prizeUSD: 0, tags: ['AI'] }));
   },
 
   async taikai() {
@@ -371,6 +415,7 @@ export async function listHackathons({ refresh = false } = {}) {
         const p = queue.shift();
         try {
           const items = (await fetchPlatform(p)).map((h) => ({ ...h, platform: p }));
+          if (!items.length) throw new Error('0 hackathons found: the site may have changed'); // keeps the last good list
           cache.byPlatform[p] = items;
           results.push([p, { ok: true, count: items.length }]);
         } catch (e) {

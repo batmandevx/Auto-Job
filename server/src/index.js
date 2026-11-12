@@ -15,25 +15,26 @@ import { traceOutcomes } from './outcomes.js';
 import { tailorResume, tailorProblems, withoutGradSentences, crisp, cleanRole } from './tailor.js';
 import { profileSkillsInJD, makeMatcher, norm, TECH_TERMS } from './keywords.js';
 import { listHackathons } from './hackathons.js';
+import { exportWorkbook } from './export.js';
 import { listInternships } from './internships.js';
 import { mailConfigured, mailStatus, findVerification, sendApplication, smtpCheck } from './mail.js';
 import { renderResumePDF, renderCoverLetterPDF } from './pdf.js';
 import { answerFields } from './answer.js';
 import { followUpDraft, interviewPrep } from './coach.js';
-import { saveAppExtra, DATA_DIR } from './store.js';
+import { saveAppExtra, DATA_DIR, writeJSON, backupData } from './store.js';
 import { getProfile, saveProfile, listApplications, upsertApplication, updateApplication, deleteApplication, STATUSES, rememberAnswers, getDocument, saveDocument, removeDocument, DOCUMENT_KINDS, DEFAULT_ANSWERS, RESUME_DIR, recordGaps, listGaps, saveGaps } from './store.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const app = express();
-// Only the extension (and local pages) may call this server.
-app.use(cors({ origin: (origin, cb) => cb(null, !origin || /^(chrome-extension:\/\/|http:\/\/localhost)/.test(origin)) }));
-// Browsers still send "simple" cross-site POSTs (e.g. a form upload) even when CORS blocks the response,
-// so any write from a web page that isn't the extension or localhost is refused outright.
-const allowedOrigin = (o) => !o || /^(chrome-extension:\/\/|https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$)/.test(o);
-app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'OPTIONS' && !allowedOrigin(req.headers.origin)) return res.status(403).json({ error: 'Forbidden origin' });
-  next();
-});
+// Only the extension (and local pages) may call this server. EXTENSION_ID pins it to yours (chrome://extensions).
+const EXT_ID = process.env.EXTENSION_ID;
+const allowedOrigin = (o) => !o || (EXT_ID ? o === `chrome-extension://${EXT_ID}` : o.startsWith('chrome-extension://')) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
+// DNS rebinding: a web page whose domain resolves to 127.0.0.1 is "same origin" and sends no Origin, but keeps its own Host.
+app.use((req, res, next) => (/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '') ? next() : res.status(403).json({ error: 'Forbidden host' })));
+app.use(cors({ origin: (origin, cb) => cb(null, allowedOrigin(origin)) }));
+// Browsers still send "simple" cross-site requests (e.g. a form upload) even when CORS blocks the response,
+// so any request from a web page that isn't the extension or localhost is refused outright.
+app.use((req, res, next) => (allowedOrigin(req.headers.origin) ? next() : res.status(403).json({ error: 'Forbidden origin' })));
 app.use(express.json({ limit: '15mb' })); // page screenshots for the visual check
 // Dev aid: a sample application form, plus the content script so it can be tried without loading the extension.
 app.use('/test', express.static(path.resolve(import.meta.dirname, '../test')));
@@ -118,7 +119,9 @@ app.post('/api/profile/skills', (req, res) => {
   res.json({ ok: true, skill });
 });
 app.put('/api/profile', (req, res) => {
-  saveProfile(req.body);
+  const b = req.body;
+  if (!b || typeof b !== 'object' || Array.isArray(b) || !Array.isArray(b.skills) || ['experience', 'education', 'projects'].some((k) => k in b && !Array.isArray(b[k]))) return res.status(400).json({ error: 'Not a profile' });
+  saveProfile(b);
   res.json(getProfile());
 });
 
@@ -372,6 +375,14 @@ app.get('/api/expand', route(async (req, res) => {
 }));
 
 
+// Excel workbook: your Jobs list (sent by the panel, which holds it), open hackathons and the tracker; `only` picks one sheet.
+app.post('/api/export', route(async (req, res) => {
+  const only = ['jobs', 'hackathons', 'tracker'].includes(req.body?.only) ? req.body.only : undefined;
+  const hackathons = !only || only === 'hackathons' ? (await listHackathons().catch(() => ({ items: [] }))).items || [] : [];
+  const buf = await exportWorkbook({ jobs: Array.isArray(req.body?.jobs) ? req.body.jobs : [], hackathons, applications: listApplications(), only });
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+}));
+
 // Application tracker: saved → applied → assessment → interviews → offer / rejected.
 app.get('/api/applications', (req, res) => res.json({ statuses: STATUSES, items: listApplications() }));
 app.post('/api/applications', (req, res) => res.json(upsertApplication(req.body)));
@@ -444,7 +455,7 @@ function runTrace({ apply = true, autoAdd = true, days } = {}) {
       }
     }
     const result = { ...out, applied, added, at: new Date().toISOString() };
-    fs.writeFileSync(TRACE_FILE, JSON.stringify(result, null, 2));
+    writeJSON(TRACE_FILE, result);
     return result;
   })().finally(() => (tracing = null));
   return tracing;
@@ -466,10 +477,17 @@ app.patch('/api/applications/:id', (req, res) => {
 });
 app.delete('/api/applications/:id', (req, res) => {
   const gone = listApplications().find((a) => a.id === req.params.id);
-  if (gone?.mail?.length) fs.writeFileSync(IGNORED_FILE, JSON.stringify([...new Set([...ignoredMail(), ...gone.mail.map((m) => m.id)])].slice(-5000)));
+  if (gone?.mail?.length) writeJSON(IGNORED_FILE, [...new Set([...ignoredMail(), ...gone.mail.map((m) => m.id)])].slice(-5000));
   deleteApplication(req.params.id);
   res.json({ ok: true });
 });
+
+// A dated copy of your profile and tracker each day (data/backups, last 7 kept).
+if (!process.env.CI) {
+  const daily = () => { try { backupData(); } catch (e) { console.log('Backup failed:', e.message); } };
+  daily();
+  setInterval(daily, 24 * 3600_000).unref();
+}
 
 const server = app.listen(PORT, '127.0.0.1', () => {
   const { provider, model } = describeProvider();

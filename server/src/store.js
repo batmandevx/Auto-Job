@@ -86,7 +86,20 @@ const read = (file, fallback) => {
     return fallback;
   }
 };
-const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2));
+// Write to a temp file, then rename: a crash mid-write never leaves half a JSON file (read() would return the fallback).
+export const writeJSON = (file, value) => {
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
+  fs.renameSync(`${file}.tmp`, file);
+};
+const write = writeJSON;
+
+export function backupData() {
+  const root = path.join(DATA_DIR, 'backups');
+  const dir = path.join(root, new Date().toISOString().slice(0, 10));
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of ['profile.json', 'applications.json', 'skill-gaps.json']) if (fs.existsSync(path.join(DATA_DIR, f))) fs.copyFileSync(path.join(DATA_DIR, f), path.join(dir, f));
+  for (const old of fs.readdirSync(root).sort().slice(0, -7)) fs.rmSync(path.join(root, old), { recursive: true, force: true });
+}
 
 export function getProfile() {
   const p = read(PROFILE, null);

@@ -310,7 +310,7 @@ li { margin: 2px 0; }
 .letter { white-space: pre-wrap; font-size: 12px; max-height: 200px; overflow: auto; background: var(--soft); padding: 10px; border-radius: 10px; margin-top: 8px; line-height: 1.6; }
 
 /* job list */
-.joblist { max-height: 360px; overflow: auto; margin: 4px -4px 0; padding: 0 4px; }
+.joblist { max-height: min(62vh, 560px); overflow: auto; margin: 4px -4px 0; padding: 0 4px; }
 .job {
   display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 10px; cursor: pointer;
   transition: background 0.2s; animation: fadeUp 0.35s var(--ease) both; animation-delay: calc(var(--i, 0) * 15ms);
@@ -324,7 +324,7 @@ li { margin: 2px 0; }
 .profile-head { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
 .avatar { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; background: var(--grad); flex: none; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
-.stat { background: var(--soft); border-radius: 10px; padding: 8px; text-align: center; }
+.stat { background: var(--soft); border-radius: 10px; padding: 8px; text-align: center; font-variant-numeric: tabular-nums; }
 .stat b { display: block; font-size: 17px; letter-spacing: -0.02em; }
 .stat span { font-size: 11px; color: var(--muted); }
 .bank { font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
@@ -371,6 +371,17 @@ kbd { font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding
 .meter { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
 .meter i { display: block; height: 100%; width: var(--w); background: var(--grad); border-radius: 99px; animation: grow 1s var(--ease) both; transition: width 0.5s var(--ease); }
 .check-meter { margin: 8px 0 2px; }
+/* Ticked jobs: a bar that rises from the bottom of the Jobs tab with what you can do with them. */
+.selbar {
+  position: sticky; bottom: 10px; z-index: 5; display: flex; align-items: center; gap: 6px; margin: 10px 0 0;
+  padding: 8px 8px 8px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--card) 82%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow);
+  transform: translateY(calc(100% + 16px)); opacity: 0; pointer-events: none; transition: transform 0.4s var(--ease), opacity 0.25s;
+}
+.selbar.show { transform: none; opacity: 1; pointer-events: auto; }
+.selbar b { font-size: 15px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.selbar span { font-size: 12px; color: var(--muted); margin-right: auto; }
+kbd { font: 600 10px/1 ui-monospace, Menlo, monospace; padding: 2px 5px; border-radius: 5px; border: 1px solid var(--line); background: var(--soft); color: var(--muted); }
 .job.is-closed > * { opacity: 0.5; transition: opacity 0.2s; } /* children: the row's own fadeUp holds its opacity at 1 */
 .job.is-closed:hover > * { opacity: 1; }
 /* Loading placeholders shaped like the cards that replace them. */
@@ -393,12 +404,13 @@ button.chip.ok { border-style: solid; border-color: transparent; }
 .board, .board-x { border: 0; background: none; color: var(--fg); font: inherit; font-size: 12px; font-weight: 600; padding: 5px 11px; cursor: pointer; }
 .board-x { padding: 5px 8px 5px 2px; color: var(--muted); }
 .board-x:hover { color: var(--bad); }
-.job-main { display: flex; flex-direction: column; min-width: 0; }
+.job-main { display: block; min-width: 0; line-height: 1.35; } /* title and badges share a line: more jobs per screen */
+.job-main .job-meta { display: block; margin-top: 1px; }
 .job-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.bad { background: var(--bad-soft); color: var(--bad); }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
-.job-main .badge { align-self: flex-start; margin: 2px 0; }
+.job-main .badge { margin-left: 4px; vertical-align: 1px; animation: pop 0.3s var(--ease) both; }
 
 /* ---------- tracker ---------- */
 .tab-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; font-size: 10px; line-height: 16px; background: var(--grad); color: #fff; }

@@ -148,8 +148,9 @@
 
     <!-- QUEUE -->
     <section id="tab-queue" class="tab">
-      <div class="card">
-        <h3 class="card-title">Your job boards</h3>
+      <details class="card section" id="boardsCard" open>
+        <summary>Your job boards<span class="sum-meta" id="boardsMeta"></span></summary>
+        <div class="section-body">
         <p class="hint">Tap a board to list its jobs, or scan them all at once.</p>
         <div id="boards" class="boards"></div>
         <button id="scanAll" class="btn primary block">
@@ -163,7 +164,8 @@
           <button id="scanBoard" class="btn ghost">Find on current tab</button>
           <button id="saveBoard" class="btn ghost sm" title="Add this link to your boards">+ Save board</button>
         </div>
-      </div>
+        </div>
+      </details>
       <div class="card">
         <div class="search">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -181,6 +183,12 @@
           <span id="jobCount" class="hint"></span>
         </div>
         <div id="jobList" class="joblist"></div>
+      </div>
+      <div class="selbar" id="selBar" role="toolbar" aria-label="Ticked jobs">
+        <b id="selCount">0</b><span>selected</span>
+        <button class="btn primary sm" data-act="start">Start applying</button>
+        <button class="btn ghost sm" data-act="save" title="Save the ticked jobs to your Tracker as To apply">☆ Save</button>
+        <button class="btn ghost sm" data-act="clear" title="Untick all">✕</button>
       </div>
       <div class="card queue-actions">
         <div class="row">

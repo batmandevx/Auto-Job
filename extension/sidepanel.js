@@ -1309,7 +1309,13 @@ function renderJobs() {
     shown.map(({ j, i, m }, n) => `<label class="job ${isClosed(j) ? 'is-closed' : ''}" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/><span class="match" style="--m:${m.score}" title="${esc(m.why.join(' · ') || 'match score')}">${m.score}</span>
       <span class="job-main">${j.url ? `<a href="${esc(safeUrl(j.url))}" target="_blank">${esc(j.title)}</a>` : `<b>${esc(j.title)}</b>`}${trackedBadge(j)}${isClosed(j) ? ` <span class="badge bad" title="${j.open === 'closed' ? 'The link says this job is closed or expired' : 'Its end date has passed'}">closed</span>` : j.open === 'open' ? ` <span class="badge ok" title="The link still accepts applications">open</span>` : ''}${j.premium ? ` <span class="badge ${$('#includePremium').checked ? '' : 'warn'}">premium</span>` : ''}
       <span class="job-meta">${esc([j.meta, j.source].filter(Boolean).join(' · '))}${m.why.length ? ` · <i>${esc(m.why.slice(0, 2).join(' · '))}</i>` : ''}</span></span></label>`).join('') ||
-    '<p class="hint">No jobs found yet.</p>';
+    (state.boardJobs.length
+      ? `<div class="empty"><span class="big">🧹</span>No jobs match. ${$('#openOnly').checked ? 'Closed jobs are hidden. ' : ''}<br><button class="btn ghost sm" data-act="unfilter" style="margin-top:8px">Show all ${state.boardJobs.length} jobs</button></div>`
+      : `<div class="empty"><span class="big">🔎</span>No jobs yet. Scan your boards to list every posting in one place.<br><button class="btn primary sm" data-act="scan" style="margin-top:8px">Scan all my boards</button></div>`);
+  const picked = state.boardJobs.filter((j) => j.selected).length;
+  $('#selCount').textContent = picked;
+  $('#selBar').classList.toggle('show', picked > 0);
+  $('#boardsMeta').textContent = state.boardJobs.length ? `${state.boardJobs.length} jobs found` : '';
 }
 
 // Your job boards. "Scan all" opens each one and merges every posting into one list.
@@ -1366,6 +1372,8 @@ async function scanAllBoards() {
     renderJobs();
   }
   $('#queueOut').textContent = `Found ${state.boardJobs.length} jobs across ${BOARDS.length} boards. Filter, tick, then Start applying.`;
+  $('#boardsCard').open = false;
+  $('#jobList').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Adds this tab's jobs to the list (never wipes what earlier scans found).
@@ -1549,6 +1557,7 @@ function renderTracker() {
   ];
   $('#trackCount').textContent = count((a) => a.status === 'saved' || ACTIVE.includes(a.status)) || '';
   $('#trackStats').innerHTML = groups.map((g) => `<div class="stat" data-g="${g.k}" style="--c:${g.c}"><b>${g.n}</b><span>${g.label}</span></div>`).join('');
+  if (!state.statsCounted && apps.length) (state.statsCounted = true), countUp($('#trackStats')), countUp($('#trackInsights'));
   const total = apps.length || 1;
   $('#trackFunnel').innerHTML = Object.entries(STATUS)
     .map(([k, m]) => [k, m, count((a) => a.status === k)])
@@ -1621,6 +1630,22 @@ function mailTimeline(a) {
 const KIND_LABEL = { rejected: 'Rejected', interview: 'Interview invite', assessment: 'Assessment', offer: 'Offer', applied: 'Application received', update: 'Update', outreach: 'Recruiter' };
 
 // Rejections and responses at a glance: what happens to your applications, and at which stage you're stopped.
+// Numbers in a block count up from 0 (once, when the tracker first fills): "406", "51%", "62 d" keep their suffix.
+function countUp(root) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const b of root.querySelectorAll('b')) {
+    const m = b.textContent.match(/^(\d+)(.*)$/s);
+    if (!m || +m[1] < 2) continue;
+    const to = +m[1], t0 = performance.now();
+    const step = (t) => {
+      const p = Math.min(1, (t - t0) / 800);
+      b.textContent = Math.round(to * (1 - (1 - p) ** 3)) + m[2];
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+}
+
 function renderInsights(apps) {
   const sent = apps.filter((a) => a.status !== 'saved');
   if (!sent.length) return ($('#trackInsights').innerHTML = '');
@@ -1637,7 +1662,7 @@ function renderInsights(apps) {
   }
   const pct = (n) => `${Math.round((100 * n) / sent.length)}%`;
   const quiet = sent.filter((a) => a.status === 'applied' && !(a.mail || []).length && Date.now() - new Date(a.appliedAt || a.createdAt) > 12 * DAY).length;
-  $('#trackInsights').innerHTML = `<div class="ins"><b>${pct(responded.length)}</b><span>heard back</span></div><div class="ins"><b>${pct(interviews.length)}</b><span>reached interview</span></div><div class="ins"><b>${rejected.length}</b><span>rejected${median != null ? ` · median ${median} d` : ''}</span></div><div class="ins"><b>${quiet}</b><span>no reply 12+ d</span></div>
+  $('#trackInsights').innerHTML = `<div class="ins"><b>${pct(responded.length)}</b><span>heard back</span></div><div class="ins"><b>${pct(interviews.length)}</b><span>reached interview</span></div><div class="ins"><b>${rejected.length}</b><span>rejected${median != null ? ` · median ${median} d` : ''}</span></div><div class="ins"><b>${quiet}</b><span>quiet 12+ days</span></div>
     ${rejected.length ? `<p class="hint">Rejected ${Object.entries(stage).map(([k, n]) => `${n} ${k}`).join(', ')}.${stage['at screening'] > rejected.length / 2 ? ' Most stop at screening: tailoring and keyword match matter most here.' : ''}</p>` : ''}`;
 }
 
@@ -1989,6 +2014,7 @@ async function checkServer() {
 }
 
 document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+document.querySelectorAll('nav button').forEach((b, i) => (b.title = `${b.textContent.trim()} (press ${i + 1}; / to search)`));
 const on = (id, fn) => $(id).addEventListener('click', (e) => busy(e.currentTarget, fn)().catch(() => {}));
 on('#runAll', runAll);
 on('#traceGmail', () => traceGmail());
@@ -2339,6 +2365,36 @@ on('#startQueue', async () => {
   if (picked.length > state.queue.length) toast(`Skipping ${picked.length - state.queue.length} you already applied to`);
   await openJob(0);
 });
+$('#selBar').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'start') $('#startQueue').click();
+  if (act === 'save') $('#saveSelected').click();
+  if (act === 'clear') state.boardJobs.forEach((j) => (j.selected = false)), renderJobs();
+});
+$('#jobList').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'scan') $('#scanAll').click();
+  if (act === 'unfilter') ($('#jobFilter').value = ''), ($('#openOnly').checked = false), renderJobs();
+});
+// Keyboard: 1-5 switch tabs, / jumps to the open tab's search box, Esc clears it.
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const typing = e.target.closest('input, textarea, select, [contenteditable="true"]');
+  if (typing) {
+    if (e.key === 'Escape' && e.target.closest('.search')) {
+      e.target.value = '';
+      e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      e.target.blur();
+    }
+    return;
+  }
+  const tabs = [...document.querySelectorAll('nav button')];
+  if (/^[1-9]$/.test(e.key) && tabs[e.key - 1]) tabs[e.key - 1].click();
+  else if (e.key === '/') {
+    const box = document.querySelector('.tab.active .search input');
+    if (box) e.preventDefault(), box.focus();
+  }
+});
 $('#jobList').addEventListener('change', (e) => {
   if (e.target.dataset.i) state.boardJobs[e.target.dataset.i].selected = e.target.checked;
   renderJobs();
@@ -2544,6 +2600,7 @@ chrome.storage.local.get(['boards', 'boardJobs', 'savedHacks']).then(({ boards, 
   renderBoards();
   if (boardJobs?.length) {
     state.boardJobs = boardJobs;
+    $('#boardsCard').open = false; // jobs already found: the list comes first, boards stay a tap away
     renderJobs();
   }
 });

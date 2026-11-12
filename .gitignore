@@ -21,3 +21,7 @@ extension/scripts/*.local.js
 
 # "Report this form" snapshots of real applications (scrubbed, but yours): share them when you choose.
 server/test/reports/
+
+# Claude Code tool state (oh-my-claudecode, serena)
+.omc/
+.serena/

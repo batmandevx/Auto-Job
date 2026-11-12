@@ -16,6 +16,7 @@ import { tailorResume, tailorProblems, withoutGradSentences, crisp, cleanRole } 
 import { profileSkillsInJD, makeMatcher, norm, TECH_TERMS } from './keywords.js';
 import { listHackathons } from './hackathons.js';
 import { exportWorkbook } from './export.js';
+import { checkJobs } from './jobcheck.js';
 import { listInternships } from './internships.js';
 import { mailConfigured, mailStatus, findVerification, sendApplication, smtpCheck } from './mail.js';
 import { renderResumePDF, renderCoverLetterPDF } from './pdf.js';
@@ -374,6 +375,9 @@ app.get('/api/expand', route(async (req, res) => {
   res.json({ user, repos: repos.length, suggestions: kept.slice(0, 25).map(([skill, source]) => ({ skill, source })) });
 }));
 
+
+// Which job links are still open: { urls: [...] } (up to 100 per call) -> { results: { url: 'open' | 'closed' | 'unknown' } }.
+app.post('/api/jobs/check', route(async (req, res) => res.json({ results: await checkJobs(Array.isArray(req.body?.urls) ? req.body.urls : []) })));
 
 // Excel workbook: your Jobs list (sent by the panel, which holds it), open hackathons and the tracker; `only` picks one sheet.
 app.post('/api/export', route(async (req, res) => {

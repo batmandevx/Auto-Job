@@ -71,7 +71,7 @@ function toast(msg, bad = false) {
 }
 
 // Every request has a time limit, so a slow AI or network shows an error instead of an endless spinner.
-const API_TIMEOUTS = [[/^\/api\/profile\/import/, 300000], [/^\/api\/(tailor|cover-letter)/, 180000], [/^\/api\/otp/, 200000], [/^\/api\/(email|answer)/, 100000], [/^\/api\/(hackathons|export)/, 90000]];
+const API_TIMEOUTS = [[/^\/api\/profile\/import/, 300000], [/^\/api\/(tailor|cover-letter)/, 180000], [/^\/api\/otp/, 200000], [/^\/api\/(email|answer)/, 100000], [/^\/api\/(hackathons|export)/, 90000], [/^\/api\/jobs\/check/, 200000]];
 async function api(path, opts = {}) {
   const ms = API_TIMEOUTS.find(([re]) => re.test(path))?.[1] || 30000;
   const res = await fetch(SERVER + path, {
@@ -1241,9 +1241,23 @@ async function submit() {
 }
 
 // ---------- job board queue ----------
+// "Ends : 6 Nov", "Last date: 12 Dec 2026", "Apply by 5 November": an end date in the board's own text that has passed.
+const MONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split(' ');
+function endedByDate(j, now = Date.now()) {
+  const m = String(j.meta || '').match(/\b(?:ends?|last date|deadline|apply by|closes?|closing date)\s*(?:on|:)?\s*(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\.?,?\s*(\d{4})?/i);
+  const mon = m && MONTHS.indexOf(m[2].toLowerCase());
+  if (!m || mon < 0) return false;
+  const year = Number(m[3]) || new Date(now).getFullYear();
+  let end = new Date(year, mon, Number(m[1]), 23, 59).getTime();
+  if (!m[3] && end - now > 182 * 86400000) end = new Date(year - 1, mon, Number(m[1]), 23, 59).getTime(); // "Ends: 28 Dec" read in January
+  return end < now;
+}
+const isClosed = (j) => j.open === 'closed' || endedByDate(j);
+
 function visibleJobs() {
   const q = $('#jobFilter').value.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
-  const list = state.boardJobs.map((j, i) => ({ j, i, m: matchScore(j) })).filter(({ j }) => !q.length || q.some((w) => j.title.toLowerCase().includes(w)));
+  const openOnly = $('#openOnly').checked;
+  const list = state.boardJobs.map((j, i) => ({ j, i, m: matchScore(j) })).filter(({ j }) => (!q.length || q.some((w) => j.title.toLowerCase().includes(w))) && !(openOnly && isClosed(j)));
   if ($('#jobSort')?.value !== 'found') list.sort((a, b) => b.m.score - a.m.score);
   return list;
 }
@@ -1289,10 +1303,11 @@ function trackedBadge(j) {
 function renderJobs() {
   saveJobs();
   const shown = visibleJobs();
-  $('#jobCount').textContent = `${shown.length} shown · ${state.boardJobs.filter((j) => j.selected).length} selected`;
+  const closed = state.boardJobs.filter(isClosed).length;
+  $('#jobCount').textContent = `${shown.length} shown · ${state.boardJobs.filter((j) => j.selected).length} selected${closed ? ` · ${closed} closed${$('#openOnly').checked ? ' hidden' : ''}` : ''}`;
   $('#jobList').innerHTML =
-    shown.map(({ j, i, m }, n) => `<label class="job" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/><span class="match" style="--m:${m.score}" title="${esc(m.why.join(' · ') || 'match score')}">${m.score}</span>
-      <span class="job-main">${j.url ? `<a href="${esc(safeUrl(j.url))}" target="_blank">${esc(j.title)}</a>` : `<b>${esc(j.title)}</b>`}${trackedBadge(j)}${j.premium ? ` <span class="badge ${$('#includePremium').checked ? '' : 'warn'}">premium</span>` : ''}
+    shown.map(({ j, i, m }, n) => `<label class="job ${isClosed(j) ? 'is-closed' : ''}" style="--i:${Math.min(n, 30)}"><input type="checkbox" data-i="${i}" ${j.selected ? 'checked' : ''}/><span class="match" style="--m:${m.score}" title="${esc(m.why.join(' · ') || 'match score')}">${m.score}</span>
+      <span class="job-main">${j.url ? `<a href="${esc(safeUrl(j.url))}" target="_blank">${esc(j.title)}</a>` : `<b>${esc(j.title)}</b>`}${trackedBadge(j)}${isClosed(j) ? ` <span class="badge bad" title="${j.open === 'closed' ? 'The link says this job is closed or expired' : 'Its end date has passed'}">closed</span>` : j.open === 'open' ? ` <span class="badge ok" title="The link still accepts applications">open</span>` : ''}${j.premium ? ` <span class="badge ${$('#includePremium').checked ? '' : 'warn'}">premium</span>` : ''}
       <span class="job-meta">${esc([j.meta, j.source].filter(Boolean).join(' · '))}${m.why.length ? ` · <i>${esc(m.why.slice(0, 2).join(' · '))}</i>` : ''}</span></span></label>`).join('') ||
     '<p class="hint">No jobs found yet.</p>';
 }
@@ -1517,7 +1532,7 @@ async function renderGaps(r) {
   $('#gapsMeta').textContent = `${r.jobs} job${r.jobs > 1 ? 's' : ''} tracked`;
   $('#gapsOut').innerHTML =
     (r.gaps.length
-      ? `<div>${r.gaps.slice(0, 12).map((g) => `<span class="chip miss" title="Asked by: ${esc(g.jobs.join(', '))}">${esc(g.term)} <b>×${g.jobs.length}</b></span>`).join('')}</div>`
+      ? `<div class="chips">${r.gaps.slice(0, 12).map((g) => `<span class="chip miss" title="Asked by: ${esc(g.jobs.join(', '))}">${esc(g.term)} <b>×${g.jobs.length}</b></span>`).join('')}</div>`
       : '<p class="hint">No gaps recorded — every job you tailored for was fully covered.</p>') +
     `<button id="upskillPlan" class="btn ghost sm" style="margin-top:8px" ${r.gaps.length ? '' : 'disabled'}>🎓 Build a 6-week learning plan</button><div id="upskillOut"></div>`;
 }
@@ -1829,8 +1844,12 @@ function closesIn(iso) {
 }
 
 async function loadHacks(refresh = false) {
-  $('#hackList').innerHTML = `<div class="empty"><span class="big">⏳</span>Fetching hackathons from ${Object.keys(PLAT).length} platforms…</div>`;
-  const r = await api(`/api/hackathons${refresh ? '?refresh=1' : ''}`);
+  $('#hackSummary').textContent = `Fetching hackathons from ${Object.keys(PLAT).length} platforms…`;
+  $('#hackList').innerHTML = Array.from({ length: 4 }, (_, i) => `<div class="hack skel" style="--i:${i}" aria-hidden="true"><div class="thumb"></div><div class="body"><i></i><i></i><i></i></div></div>`).join('');
+  const r = await api(`/api/hackathons${refresh ? '?refresh=1' : ''}`).catch((e) => {
+    $('#hackList').innerHTML = `<div class="empty"><span class="big">⚠️</span>${esc(e.message)}<br>Press Refresh to try again.</div>`;
+    throw e;
+  });
   state.hacks = r.items || [];
   state.hackSources = r.sources || {};
   renderHacks();
@@ -2411,12 +2430,35 @@ $('#expandOut').addEventListener('click', async (e) => {
 $('#jobFilter').addEventListener('input', renderJobs);
 $('#jobSort').addEventListener('change', renderJobs);
 $('#includePremium').addEventListener('change', renderJobs);
+$('#openOnly').addEventListener('change', renderJobs);
+// Opens every job link on the server (8 at a time, 40 per request so the count moves), then hides the closed ones.
+on('#checkOpen', async () => {
+  const todo = state.boardJobs.filter((j) => j.url && !endedByDate(j));
+  if (!todo.length) throw new Error('No jobs to check: scan your boards first');
+  const bar = $('#checkMeter');
+  bar.hidden = false;
+  try {
+    for (let i = 0; i < todo.length; i += 40) {
+      $('#jobCount').textContent = `Checking ${Math.min(i + 40, todo.length)} of ${todo.length} links…`;
+      bar.firstElementChild.style.setProperty('--w', `${Math.max(4, (i / todo.length) * 100)}%`);
+      const { results } = await api('/api/jobs/check', { method: 'POST', body: { urls: todo.slice(i, i + 40).map((j) => j.url) } });
+      for (const j of todo.slice(i, i + 40)) j.open = results[j.url] || j.open;
+    }
+  } finally {
+    bar.hidden = true;
+  }
+  $('#openOnly').checked = true;
+  chrome.storage.local.set({ openOnly: true }).catch(() => {});
+  renderJobs();
+  const n = state.boardJobs.filter(isClosed).length;
+  toast(`${n} closed job${n === 1 ? '' : 's'} hidden · ${todo.filter((j) => j.open === 'unknown').length} couldn't be checked (kept)`);
+});
 $('#serverUrl').addEventListener('change', async (e) => {
   SERVER = e.target.value.trim().replace(/\/$/, '') || 'http://localhost:8787';
   await chrome.storage.local.set({ server: SERVER });
   checkServer();
 });
-for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) {
+for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'openOnly', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) {
   $(`#${id}`).addEventListener('change', (e) => chrome.storage.local.set({ [id]: e.target.checked }));
 }
 
@@ -2505,9 +2547,9 @@ chrome.storage.local.get(['boards', 'boardJobs', 'savedHacks']).then(({ boards, 
     renderJobs();
   }
 });
-chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']).then((s) => {
+chrome.storage.local.get(['server', 'autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'openOnly', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']).then((s) => {
   if (s.server) SERVER = s.server;
   $('#serverUrl').value = SERVER;
-  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
+  for (const id of ['autoNext', 'autoCover', 'onlyEmpty', 'includePremium', 'openOnly', 'fillGaps', 'visualCheck', 'realTyping', 'researchFirst']) if (typeof s[id] === 'boolean') $(`#${id}`).checked = s[id];
   checkServer();
 });

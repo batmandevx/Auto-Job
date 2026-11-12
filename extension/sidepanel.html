@@ -171,6 +171,11 @@
           <select id="jobSort" class="select" title="Order of the list"><option value="match">Best match first</option><option value="found">As found</option></select>
         </div>
         <label class="switch" style="margin:8px 0 2px"><input type="checkbox" id="includePremium" /><span class="track"></span>Include premium jobs (I'm logged in with premium)</label>
+        <div class="row between" style="margin:4px 0 2px">
+          <label class="switch" style="margin:0" title="Hide jobs whose link says they are closed or expired, and jobs whose end date has passed"><input type="checkbox" id="openOnly" /><span class="track"></span>Open jobs only</label>
+          <button id="checkOpen" class="btn ghost sm" title="Open every job link (on your laptop) and see which still accept applications">✓ Check which are open</button>
+        </div>
+        <div class="meter check-meter" id="checkMeter" hidden title="Checking job links"><i style="--w:0%"></i></div>
         <div class="row between">
           <span class="row" style="margin:0;gap:6px"><button id="selectAll" class="btn ghost sm">Select all shown</button><button id="clearJobs" class="btn ghost sm">Clear</button></span>
           <span id="jobCount" class="hint"></span>

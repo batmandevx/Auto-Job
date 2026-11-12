@@ -426,6 +426,7 @@ For employer portals such as Amazon Jobs, Profile answers can also provide educa
 ### Jobs tab: job boards and the queue
 
 - **Match score:** every posting gets a 0–100 score from your target roles, skills in the title, seniority against your experience ("Senior", "5+ years" are marked down for a fresher), internship vs full-time and whether you already applied. The list sorts best match first (or *As found*); hover a score for the reasons.
+- **✓ Check which are open:** opens every job link from your laptop and marks each one *open* or *closed*: 404 pages, links that bounce back to the job list (Greenhouse, zapply), "no longer accepting applications" text, and Workday's own job API. Jobs whose end date has passed ("Ends : 6 Nov") count as closed without a check. **Open jobs only** hides the closed ones; links that couldn't be checked (login walls, blocked sites) stay visible. Results are kept for 12 hours.
 - **Safe queue:** **Start applying** skips jobs you already applied to, pauses 20–40 s between applications, and stops at 25 a day.
 
 1. Tap a preset board (The Job Company, TJC Internships, Let's Code, EngineerHub, Debug with Shubham, Crack Off-Campus, **Internships 2027** — 600+ curated tech internships from [zapplyjobs](https://github.com/zapplyjobs/Internships-2027), parsed by the server every 10 minutes with location, posted time and visa-sponsorship flags), or paste any careers page / Greenhouse / Lever board link and press **Open & find jobs**.
@@ -760,6 +761,7 @@ All endpoints are on `http://localhost:8787` and accept JSON.
 | GET | `/api/email/check` · `/api/mail/status` | Gmail connection status |
 | GET | `/api/otp` | Wait for a one-time code or verification link |
 | GET | `/api/hackathons` | Open hackathons from 10 platforms |
+| POST | `/api/jobs/check` | Which job links are still open (`open` / `closed` / `unknown`), up to 100 per call |
 | POST | `/api/export` | Excel workbook: the Jobs list you send, open hackathons, the tracker |
 | GET | `/api/internships` | The Internships 2027 list (zapplyjobs repo), parsed into jobs, cached 10 min |
 | GET / POST / PATCH / DELETE | `/api/applications[/:id]` | The tracker |
@@ -790,6 +792,7 @@ Auto-Job/
 │   │   ├── mail.js            Gmail IMAP / SMTP
 │   │   ├── hackathons.js      10 hackathon platforms
 │   │   ├── export.js          the colour-coded Excel workbook
+│   │   ├── jobcheck.js        is a job link still open (redirects, closed text, Workday API)
 │   │   ├── outcomes.js        Gmail outcome tracing: rejections, interviews, assessments, offers
 │   │   ├── research.js        company research: website, Wikipedia / Wikidata, news, sources
 │   │   └── store.js           profile, documents, tracker on disk (atomic writes, daily backups)

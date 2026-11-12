@@ -220,6 +220,10 @@ textarea { resize: vertical; min-height: 70px; }
 .search { position: relative; }
 .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
 .search input { padding-left: 32px !important; }
+/* Filter box and sort menu share one row, so the icon stays centred on the box. */
+.search:has(select) { display: flex; gap: 6px; align-items: center; }
+.search:has(select) input { flex: 1; min-width: 0; }
+.search:has(select) select { flex: none; width: auto; }
 
 /* switches */
 .toggles { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; }
@@ -365,7 +369,17 @@ kbd { font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding
 /* keyword coverage */
 .kw-num { font-weight: 800; font-size: 13px; color: var(--accent); }
 .meter { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
-.meter i { display: block; height: 100%; width: var(--w); background: var(--grad); border-radius: 99px; animation: grow 1s var(--ease) both; }
+.meter i { display: block; height: 100%; width: var(--w); background: var(--grad); border-radius: 99px; animation: grow 1s var(--ease) both; transition: width 0.5s var(--ease); }
+.check-meter { margin: 8px 0 2px; }
+.job.is-closed > * { opacity: 0.5; transition: opacity 0.2s; } /* children: the row's own fadeUp holds its opacity at 1 */
+.job.is-closed:hover > * { opacity: 1; }
+/* Loading placeholders shaped like the cards that replace them. */
+.skel .thumb, .skel i { background: linear-gradient(90deg, var(--soft) 25%, color-mix(in srgb, var(--line) 70%, var(--soft)) 50%, var(--soft) 75%); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; }
+.skel i { display: block; height: 10px; border-radius: 6px; margin: 7px 0; }
+.skel i:nth-child(1) { width: 72%; height: 12px; margin-top: 4px; }
+.skel i:nth-child(2) { width: 45%; }
+.skel i:nth-child(3) { width: 86%; }
+@keyframes shimmer { to { background-position: -200% 0; } }
 .chip.ok { background: var(--ok-soft); color: var(--ok); }
 button.chip { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; transition: transform 0.2s var(--ease); }
 button.chip:hover { transform: translateY(-1px); }
@@ -382,6 +396,8 @@ button.chip.ok { border-style: solid; border-color: transparent; }
 .job-main { display: flex; flex-direction: column; min-width: 0; }
 .job-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.bad { background: var(--bad-soft); color: var(--bad); }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
 .job-main .badge { align-self: flex-start; margin: 2px 0; }
 
 /* ---------- tracker ---------- */
@@ -445,7 +461,7 @@ button.chip.learn { background: color-mix(in srgb, var(--accent) 12%, transparen
 .hack { position: relative; display: flex; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--card); animation: fadeUp 0.35s var(--ease) both; animation-delay: calc(var(--i, 0) * 18ms); transition: transform 0.2s var(--ease), box-shadow 0.2s, border-color 0.2s; }
 .hack:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
 .hack .thumb { width: 44px; height: 44px; border-radius: 10px; flex: none; background: var(--soft) center/cover no-repeat; display: grid; place-items: center; font-weight: 800; color: #fff; }
-.hack .body { min-width: 0; flex: 1; }
+.hack .body { min-width: 0; flex: 1; padding-right: 22px; } /* room for the ☆ and 📅 buttons */
 .hack .t { font-weight: 650; line-height: 1.3; }
 .hack .t a { color: var(--fg); font-weight: 650; }
 .hack .m { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
